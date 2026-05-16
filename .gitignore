@@ -1,0 +1,44 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# AWS credential exports
+manifests/
+*.csv
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Claude Code
+.claude/
+
+# Project-specific exclusions
+item_images/
+design/
+backend/flipr_jobs.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

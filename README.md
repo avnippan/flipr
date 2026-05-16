@@ -37,9 +37,9 @@ Supports single-item analysis and batch jobs (multiple photos processed concurre
 ## Architecture
 
 ```
-POST /api/v1/items/analyze          POST /api/v1/batch/jobs
-         │                                    │
-         ▼                                    ▼
+POST /api/v1/items/analyze          POST /api/v1/batch/uploads → PUT {presigned_url}
+         │                          POST /api/v1/batch/analyze
+         ▼                                    │
    [FastAPI route]                   [Create job → DynamoDB]
          │                                    │
          ▼                                    │ (per image, concurrent)
@@ -96,7 +96,7 @@ backend/
     │   ├── schemas.py        # Request/response models
     │   └── routes/
     │       ├── items.py      # POST /items/analyze
-    │       └── batch.py      # POST /batch/jobs, GET /batch/jobs/{id}
+    │       └── batch.py      # POST /batch/uploads, POST /batch/analyze, GET /batch/jobs/{id}
     ├── core/
     │   ├── job_models.py     # JobStatus, ItemStatus enums
     │   ├── job_store.py      # Abstract job store interface
@@ -197,24 +197,56 @@ Analyze a single item image synchronously.
 }
 ```
 
-### `POST /api/v1/batch/jobs`
+### `POST /api/v1/batch/uploads`
 
-Create a batch job for multiple images already uploaded to S3.
+Request presigned S3 URLs for direct client-side uploads. Returns one URL per file.
 
 **Body:**
 ```json
 {
-  "items": [
-    { "s3_key": "uploads/abc123.jpg", "mime_type": "image/jpeg" }
+  "files": [
+    { "mime_type": "image/jpeg" }
   ]
 }
 ```
 
-**Response:** `{ "job_id": "uuid" }`
+**Response:**
+```json
+{
+  "job_id": "uuid",
+  "uploads": [
+    { "index": 0, "presigned_url": "https://...", "s3_key": "uploads/uuid/0.jpg" }
+  ]
+}
+```
+
+### `PUT {presigned_url}`
+
+Upload image bytes directly to S3 — this request goes to S3, not your server.
+
+**Headers:** `Content-Type: image/jpeg`
+
+**Body:** raw image bytes
+
+### `POST /api/v1/batch/analyze`
+
+Trigger analysis for a job after all images have been uploaded.
+
+**Body:**
+```json
+{
+  "job_id": "uuid",
+  "images": [
+    { "s3_key": "uploads/uuid/0.jpg" }
+  ]
+}
+```
+
+**Response:** `{ "job_id": "uuid", "status": "processing" }`
 
 ### `GET /api/v1/batch/jobs/{job_id}`
 
-Poll job status and results.
+Poll job status and per-item results.
 
 ---
 

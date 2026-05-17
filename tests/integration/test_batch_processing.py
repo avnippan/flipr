@@ -168,10 +168,7 @@ def test_batch_processing():
                             print(f"   Hashtags: {hashtags}")
 
                         description = listing.get('description', 'N/A')
-                        # Truncate long descriptions for readability
-                        if len(description) > 200:
-                            description = description[:200] + "..."
-                        print(f"   Description: {description}")
+                        print(f"   Description:\n{description}")
                         print(f"   " + "-"*40)
 
                 elif item['status'] == 'failed':

@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Flipr</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #f0eee9;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 0;
+  }
+
+  #root {
+    width: 390px;
+    min-height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+
+  @keyframes flipr-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #6b6b6b;
+  }
+
+  ::-webkit-scrollbar { width: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const PHOTO_OPTIONS = [
+  { name: 'Columbia Shirt', color: '#b8d4e8' },
+  { name: 'Thrasher Tee',   color: '#7ab87a' },
+  { name: 'Kühl Tee',       color: '#4a5568' },
+];
+
+const LISTINGS = [
+  {
+    id: 1, name: 'Columbia Shirt', color: '#b8d4e8',
+    poshmark: {
+      title: 'Columbia Light Blue Long Sleeve Shirt - Logo Chest',
+      description: 'Columbia long sleeve shirt in a soft light blue shade. Features the classic Columbia logo on the left chest. No major flaws or stains, just gentle wear from previous use.',
+      category: "Men's Shirts",
+      size: 'Not Listed',
+      condition: 'Good',
+      brand: 'Columbia',
+      color: 'Light Blue',
+      style_tags: ['#gorpcore', '#thrifted', '#outdoors'],
+      price: 19.42,
+      hashtags: ['#Columbia','#gorpcore','#longsleeve','#thrifted','#mensclothing'],
+    },
+    ebay: {
+      title: 'Columbia Long Sleeve Shirt Light Blue Logo',
+      category: "Men's Clothing > Shirts",
+      condition: 'Pre-Owned',
+      item_specifics: { Brand: 'Columbia', Size: 'Not Listed', Color: 'Light Blue', Material: 'Unknown', Gender: "Men's" },
+      description: 'Columbia long sleeve shirt in light blue with logo on left chest. Pre-owned, good condition. No visible holes or stains.',
+      price: 19.42,
+    },
+  },
+  {
+    id: 2, name: 'Thrasher Tee', color: '#7ab87a',
+    poshmark: {
+      title: 'Thrasher Green Skateboard Magazine Tee',
+      description: 'Green Thrasher graphic tee with the iconic Skateboard Magazine logo on the front. Made from soft cotton, in good condition with some natural wear. Size tag missing — check measurements.',
+      category: "Men's T-Shirts",
+      size: 'Not Listed',
+      condition: 'Good',
+      brand: 'Thrasher',
+      color: 'Green',
+      style_tags: ['#skatewear', '#streetwear', '#graphictee'],
+      price: 16.81,
+      hashtags: ['#Thrasher','#skatewear','#graphictee','#gentlyused','#mensclothing'],
+    },
+    ebay: {
+      title: 'Thrasher Green Graphic Tee Cotton Skateboard Magazine',
+      category: "Men's Clothing > T-Shirts",
+      condition: 'Pre-Owned',
+      item_specifics: { Brand: 'Thrasher', Size: 'Not Listed', Color: 'Green', Material: '100% Cotton', Gender: "Men's" },
+      description: 'Thrasher Skateboard Magazine graphic tee in green. Pre-owned, good condition.',
+      price: 16.81,
+    },
+  },
+  {
+    id: 3, name: 'Kühl Tee', color: '#4a5568',
+    poshmark: {
+      title: 'KÜHL Navy Cotton Blend Tee L with Contrast Stitching',
+      description: 'KÜHL tee in navy, size L. Made from a comfortable cotton blend with eye-catching contrast stitching. Good condition, minimal wear from previous use.',
+      category: "Men's T-Shirts",
+      size: 'L',
+      condition: 'Good',
+      brand: 'KÜHL',
+      color: 'Navy',
+      style_tags: ['#gorpcore', '#outdoors', '#crewneck'],
+      price: 22.80,
+      hashtags: ['#KÜHL','#gorpcore','#crewneck','#gentlyused','#mensclothing'],
+    },
+    ebay: {
+      title: 'KUHL T-Shirt Navy Cotton Blend L Contrast Stitching',
+      category: "Men's Clothing > T-Shirts",
+      condition: 'Pre-Owned',
+      item_specifics: { Brand: 'KÜHL', Size: 'L', Color: 'Navy', Material: 'Cotton Blend', Gender: "Men's" },
+      description: 'KÜHL t-shirt in navy with contrast stitching. Size L. Pre-owned, good condition.',
+      price: 22.80,
+    },
+  },
+];
+
+/* ─── Shared top bar ─── */
+function TopBar() {
+  return (
+    <div style={{ paddingTop: 56, paddingLeft: 20, paddingRight: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <span style={{ fontSize: 20, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.4px' }}>
+        Flipr<span style={{ color: '#4f6ef7' }}>.</span>
+      </span>
+      <div style={{
+        width: 32, height: 32, borderRadius: '50%', background: '#e7e7e7',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6b6b6b', letterSpacing: '0.4px'
+      }}>JD</div>
+    </div>
+  );
+}
+
+/* ─── Hatched placeholder box ─── */
+function HatchBox({ size, label }) {
+  const id = `hatch-${size}-${label}`;
+  return (
+    <svg width={size} height={size} style={{ borderRadius: 8, flexShrink: 0 }}>
+      <defs>
+        <pattern id={id} patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+          <line x1="0" y1="0" x2="0" y2="8" stroke="#c9c9c9" strokeWidth="1" strokeDasharray="3 3" />
+        </pattern>
+      </defs>
+      <rect width={size} height={size} fill={`url(#${id})`} rx="8" />
+      {label && (
+        <text x={size/2} y={size/2 + 3} textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="9" fill="#9a9a9a" letterSpacing="0.5">{label}</text>
+      )}
+    </svg>
+  );
+}
+
+/* ══════════════════════════════════════════
+   SCREEN 1: UPLOAD
+══════════════════════════════════════════ */
+function UploadScreen({ onAnalyze }) {
+  const [photos, setPhotos] = useState([]);
+  const nextIndex = photos.length < PHOTO_OPTIONS.length ? photos.length : null;
+
+  function addPhoto() {
+    if (nextIndex === null) return;
+    setPhotos(prev => [...prev, PHOTO_OPTIONS[nextIndex]]);
+  }
+
+  function removePhoto(i) {
+    setPhotos(prev => prev.filter((_, idx) => idx !== i));
+  }
+
+  const hasPhotos = photos.length > 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <TopBar />
+
+      {/* Title */}
+      <div style={{ padding: '12px 20px 20px' }}>
+        <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.6px', color: '#1a1a1a' }}>New batch</div>
+        <div style={{ fontSize: 14, color: '#6b6b6b', marginTop: 6 }}>Add up to 5 photos. We'll handle the rest.</div>
+      </div>
+
+      {/* Upload zone */}
+      <div style={{ margin: '0 20px' }}>
+        <div
+          onClick={!hasPhotos ? addPhoto : undefined}
+          style={{
+            position: 'relative',
+            width: '100%',
+            paddingTop: '100%',
+            borderRadius: 14,
+            border: hasPhotos ? 'none' : '1.5px dashed #c9c9c9',
+            background: hasPhotos
+              ? '#ffffff'
+              : 'repeating-linear-gradient(135deg, transparent 0 10px, rgba(0,0,0,0.02) 10px 11px)',
+            cursor: hasPhotos ? 'default' : 'pointer',
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            {!hasPhotos ? (
+              <>
+                <div style={{
+                  width: 52, height: 52, borderRadius: '50%', background: '#ffffff',
+                  border: '1px solid #e7e7e7', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                    <path d="M11 14V4M11 4L7 8M11 4L15 8" stroke="#1a1a1a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M4 16v1a2 2 0 002 2h10a2 2 0 002-2v-1" stroke="#6b6b6b" strokeWidth="1.6" strokeLinecap="round"/>
+                  </svg>
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a', marginTop: 14 }}>Tap to upload photo</div>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9a9a9a', marginTop: 4 }}>JPG · PNG · HEIC</div>
+              </>
+            ) : (
+              <div style={{
+                width: '100%', height: '100%',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 8,
+                padding: 12,
+                alignContent: 'start',
+              }}>
+                {photos.map((p, i) => (
+                  <div key={i} style={{
+                    position: 'relative',
+                    background: p.color,
+                    borderRadius: 10,
+                    aspectRatio: '1',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    overflow: 'hidden',
+                  }}>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'rgba(255,255,255,0.85)', textAlign: 'center', padding: '0 6px', lineHeight: 1.3 }}>{p.name}</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); removePhoto(i); }}
+                      style={{
+                        position: 'absolute', top: 5, right: 5,
+                        width: 20, height: 20, borderRadius: '50%',
+                        background: 'rgba(0,0,0,0.6)', border: 'none',
+                        color: '#fff', fontSize: 13, lineHeight: 1,
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontFamily: 'Inter, sans-serif',
+                      }}
+                    >×</button>
+                  </div>
+                ))}
+                {photos.length < 3 && (
+                  <div
+                    onClick={addPhoto}
+                    style={{
+                      background: '#f5f5f5',
+                      border: '1.5px dashed #c9c9c9',
+                      borderRadius: 10,
+                      aspectRatio: '1',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer',
+                      flexDirection: 'column', gap: 4,
+                    }}
+                  >
+                    <span style={{ fontSize: 22, color: '#9a9a9a', lineHeight: 1 }}>+</span>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#9a9a9a' }}>add</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Counter */}
+      {hasPhotos && (
+        <div style={{ marginTop: 12, marginLeft: 20, marginRight: 20 }}>
+          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9a9a9a' }}>
+            {photos.length} of 5 photos added
+          </span>
+        </div>
+      )}
+
+      <div style={{ flex: 1 }} />
+
+      {/* Bottom dock */}
+      <div style={{ padding: '12px 20px 48px', borderTop: '1px solid #f0f0f0' }}>
+        <button
+          onClick={() => hasPhotos && onAnalyze(photos)}
+          disabled={!hasPhotos}
+          style={{
+            width: '100%', height: 52, borderRadius: 12, border: 'none',
+            background: hasPhotos ? '#1a1a1a' : '#ececec',
+            color: hasPhotos ? '#ffffff' : '#9a9a9a',
+            fontSize: 15, fontWeight: 600, cursor: hasPhotos ? 'pointer' : 'not-allowed',
+            fontFamily: 'Inter, sans-serif', letterSpacing: '-0.2px',
+            transition: 'background 0.2s, color 0.2s',
+          }}
+        >
+          Analyze Items →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   SCREEN 2: PROCESSING
+══════════════════════════════════════════ */
+function ProcessingScreen({ photos, onDone }) {
+  const [statuses, setStatuses] = useState(photos.map(() => 'pending'));
+
+  useEffect(() => {
+    const t0 = setTimeout(() => setStatuses(s => s.map((v,i) => i===0 ? 'analyzing' : v)), 0);
+    const t1 = setTimeout(() => setStatuses(s => s.map((v,i) => i===0 ? 'done' : i===1 ? 'analyzing' : v)), 1200);
+    const t2 = setTimeout(() => setStatuses(s => s.map((v,i) => i===1 ? 'done' : i===2 ? 'analyzing' : v)), 2600);
+    const t3 = setTimeout(() => setStatuses(s => s.map((v,i) => i===2 ? 'done' : v)), 4000);
+    const t4 = setTimeout(onDone, 4500);
+    return () => [t0,t1,t2,t3,t4].forEach(clearTimeout);
+  }, []);
+
+  const doneCount = statuses.filter(s => s === 'done').length;
+  const progress = photos.length > 0 ? (doneCount / photos.length) * 100 : 0;
+
+  function statusLabel(s) {
+    if (s === 'pending') return 'Waiting…';
+    if (s === 'analyzing') return 'Analyzing…';
+    return 'Complete';
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <TopBar />
+
+      <div style={{ padding: '12px 20px 20px' }}>
+        <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.6px', color: '#1a1a1a' }}>Analyzing batch</div>
+        <div style={{ fontSize: 14, color: '#6b6b6b', marginTop: 6 }}>Usually takes 10–20 seconds</div>
+      </div>
+
+      {/* Item rows */}
+      <div style={{ margin: '0 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {photos.map((photo, i) => {
+          const s = statuses[i];
+          return (
+            <div key={i} style={{
+              background: '#ffffff', borderRadius: 14, border: '1px solid #e7e7e7',
+              padding: 16, display: 'flex', alignItems: 'center', gap: 12,
+            }}>
+              <HatchBox size={48} label={`IMG ${i+1}`} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{photo.name}</div>
+                <div style={{ fontSize: 12, color: '#6b6b6b', marginTop: 2 }}>{statusLabel(s)}</div>
+              </div>
+              <StatusIndicator status={s} />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Progress */}
+      <div style={{ padding: '20px 20px 0' }}>
+        <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6b6b6b', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 10 }}>Progress</div>
+        <div style={{ height: 3, background: '#e7e7e7', borderRadius: 99, overflow: 'hidden' }}>
+          <div style={{
+            height: '100%', background: '#4f6ef7', borderRadius: 99,
+            width: `${progress}%`, transition: 'width 0.5s ease',
+          }} />
+        </div>
+        <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9a9a9a', marginTop: 8 }}>
+          {doneCount} of {photos.length} complete
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusIndicator({ status }) {
+  if (status === 'pending') {
+    return <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#e7e7e7', flexShrink: 0 }} />;
+  }
+  if (status === 'analyzing') {
+    return (
+      <div style={{
+        width: 16, height: 16, borderRadius: '50%',
+        border: '2px solid #4f6ef7', borderTopColor: 'transparent',
+        flexShrink: 0,
+        animation: 'flipr-spin 0.8s linear infinite',
+      }} />
+    );
+  }
+  return (
+    <div style={{
+      width: 16, height: 16, borderRadius: '50%',
+      background: '#4f6ef7', flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
+        <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   SCREEN 3: RESULTS
+══════════════════════════════════════════ */
+function ResultsScreen({ photos, onReset }) {
+  const visibleListings = LISTINGS.filter(l => photos.some(p => p.name === l.name));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <TopBar />
+
+      <div style={{ padding: '12px 20px 20px' }}>
+        <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.6px', color: '#1a1a1a' }}>{visibleListings.length} listings ready</div>
+        <div style={{ fontSize: 14, color: '#6b6b6b', marginTop: 6 }}>Tap copy to use a listing</div>
+      </div>
+
+      {/* Scrollable listing cards */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {visibleListings.map(listing => (
+          <ListingCard key={listing.id} listing={listing} />
+        ))}
+      </div>
+
+      {/* Bottom dock */}
+      <div style={{ padding: '12px 20px 48px', borderTop: '1px solid #f0f0f0', flexShrink: 0 }}>
+        <button
+          onClick={onReset}
+          style={{
+            width: '100%', height: 44, borderRadius: 10, border: '1px solid #d4d4d4',
+            background: '#ffffff', color: '#1a1a1a',
+            fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+          }}
+        >
+          ← Start new batch
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Listing card sub-components ─── */
+function FieldLabel({ children }) {
+  return (
+    <div style={{
+      fontFamily: 'JetBrains Mono, monospace', fontSize: 11,
+      textTransform: 'uppercase', letterSpacing: '0.8px',
+      color: '#6b6b6b', marginBottom: 5,
+    }}>{children}</div>
+  );
+}
+
+function FieldRow({ label, value }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <FieldLabel>{label}</FieldLabel>
+      <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a' }}>{value}</div>
+    </div>
+  );
+}
+
+function PoshmarkContent({ pm, expanded, setExpanded }) {
+  const earnings = (pm.price * 0.80).toFixed(2);
+  return (
+    <>
+      <FieldRow label="Title" value={pm.title} />
+
+      <div style={{ marginBottom: 14 }}>
+        <FieldLabel>Description</FieldLabel>
+        <div style={{
+          fontSize: 13, color: '#6b6b6b', lineHeight: 1.5,
+          display: '-webkit-box', WebkitBoxOrient: 'vertical',
+          WebkitLineClamp: expanded ? 'unset' : 2, overflow: 'hidden',
+        }}>{pm.description}</div>
+        <button onClick={() => setExpanded(e => !e)} style={{
+          background: 'none', border: 'none', color: '#4f6ef7', fontSize: 13,
+          cursor: 'pointer', marginTop: 4, padding: 0, fontFamily: 'Inter, sans-serif',
+        }}>{expanded ? 'Show less ↑' : 'Show more →'}</button>
+      </div>
+
+      <FieldRow label="Category" value={pm.category} />
+      <FieldRow label="Size" value={pm.size} />
+      <FieldRow label="Condition" value={pm.condition} />
+      <FieldRow label="Brand" value={pm.brand} />
+      <FieldRow label="Color" value={pm.color} />
+
+      <div style={{ marginBottom: 14 }}>
+        <FieldLabel>Style Tags</FieldLabel>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {pm.style_tags.map(tag => (
+            <span key={tag} style={{
+              background: '#eff3ff', color: '#4f6ef7',
+              fontSize: 12, padding: '3px 8px', borderRadius: 6,
+              fontFamily: 'JetBrains Mono, monospace',
+            }}>{tag}</span>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <FieldLabel>Price &amp; Earnings</FieldLabel>
+        <div style={{ fontSize: 13, color: '#6b6b6b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span>Listing Price: <strong style={{ color: '#1a1a1a' }}>${pm.price.toFixed(2)}</strong></span>
+          <span style={{ color: '#c9c9c9' }}>→</span>
+          <span>Your Earnings: <strong style={{ color: '#4f6ef7' }}>${earnings}</strong></span>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function EbayContent({ eb, expanded, setExpanded }) {
+  const charCount = eb.title.length;
+  const specs = eb.item_specifics;
+  return (
+    <>
+      <div style={{ marginBottom: 14 }}>
+        <FieldLabel>Title</FieldLabel>
+        <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a' }}>{eb.title}</div>
+        <div style={{
+          fontFamily: 'JetBrains Mono, monospace', fontSize: 10, marginTop: 3,
+          color: charCount > 70 ? '#c0392b' : '#9a9a9a',
+        }}>{charCount}/80 characters</div>
+      </div>
+
+      <FieldRow label="Category" value={eb.category} />
+      <FieldRow label="Condition" value={eb.condition} />
+
+      <div style={{ marginBottom: 14 }}>
+        <FieldLabel>Item Specifics</FieldLabel>
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px 12px',
+          background: '#fafafa', borderRadius: 8, padding: '10px 12px',
+          border: '1px solid #f0f0f0',
+        }}>
+          {Object.entries(specs).map(([k, v]) => (
+            <React.Fragment key={k}>
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9a9a9a' }}>{k}</div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{v}</div>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <FieldLabel>Description</FieldLabel>
+        <div style={{
+          fontSize: 13, color: '#6b6b6b', lineHeight: 1.5,
+          display: '-webkit-box', WebkitBoxOrient: 'vertical',
+          WebkitLineClamp: expanded ? 'unset' : 2, overflow: 'hidden',
+        }}>{eb.description}</div>
+        <button onClick={() => setExpanded(e => !e)} style={{
+          background: 'none', border: 'none', color: '#4f6ef7', fontSize: 13,
+          cursor: 'pointer', marginTop: 4, padding: 0, fontFamily: 'Inter, sans-serif',
+        }}>{expanded ? 'Show less ↑' : 'Show more →'}</button>
+      </div>
+
+      <div>
+        <FieldLabel>Format &amp; Price</FieldLabel>
+        <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a' }}>
+          Buy It Now · <span style={{ color: '#4f6ef7' }}>${eb.price.toFixed(2)}</span>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ListingCard({ listing }) {
+  const [platform, setPlatform] = useState('poshmark');
+  const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  const pm = listing.poshmark;
+  const eb = listing.ebay;
+
+  function copyListing() {
+    let text;
+    if (platform === 'poshmark') {
+      text = [
+        `Title: ${pm.title}`,
+        `Category: ${pm.category}`,
+        `Size: ${pm.size}`,
+        `Condition: ${pm.condition}`,
+        `Brand: ${pm.brand}`,
+        `Color: ${pm.color}`,
+        `Style Tags: ${pm.style_tags.join(' ')}`,
+        `Description: ${pm.description}`,
+        `Price: $${pm.price.toFixed(2)}`,
+      ].join('\n');
+    } else {
+      const s = eb.item_specifics;
+      text = [
+        `Title: ${eb.title}`,
+        `Category: ${eb.category}`,
+        `Condition: ${eb.condition}`,
+        `Brand: ${s.Brand}`,
+        `Size: ${s.Size}`,
+        `Color: ${s.Color}`,
+        `Material: ${s.Material}`,
+        `Gender: ${s.Gender}`,
+        `Description: ${eb.description}`,
+        `Price: $${eb.price.toFixed(2)}`,
+      ].join('\n');
+    }
+    navigator.clipboard.writeText(text).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  const CATEGORY_TYPE = { "Men's Shirts": "Shirt", "Men's T-Shirts": "Tee" };
+  const type = CATEGORY_TYPE[pm.category] || pm.category;
+  const brandType = `${pm.brand} · ${type}`;
+
+  return (
+    <div style={{ borderRadius: 14, border: '1px solid #e7e7e7', background: '#ffffff', overflow: 'hidden' }}>
+
+      {/* Header */}
+      <div style={{ padding: 16, borderBottom: '1px solid #e7e7e7', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <HatchBox size={50} label="" />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>{brandType}</div>
+          <div style={{
+            display: 'inline-block',
+            fontFamily: 'JetBrains Mono, monospace', fontSize: 10,
+            textTransform: 'uppercase', letterSpacing: '0.5px',
+            padding: '4px 8px', borderRadius: 999, border: '1px solid #e7e7e7',
+            color: '#6b6b6b',
+          }}>{pm.condition}</div>
+        </div>
+        <div style={{ fontSize: 22, fontWeight: 700, color: '#4f6ef7', flexShrink: 0 }}>${pm.price.toFixed(2)}</div>
+      </div>
+
+      {/* Platform toggle */}
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid #e7e7e7', display: 'flex', gap: 8 }}>
+        {['poshmark', 'ebay'].map(p => (
+          <button
+            key={p}
+            onClick={() => { setPlatform(p); setExpanded(false); }}
+            style={{
+              height: 30, padding: '0 14px', borderRadius: 999, border: 'none',
+              background: platform === p ? '#1a1a1a' : '#eff3ff',
+              color: platform === p ? '#ffffff' : '#4f6ef7',
+              fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+              transition: 'background 0.15s, color 0.15s',
+            }}
+          >
+            {p === 'poshmark' ? 'Poshmark' : 'eBay'}
+          </button>
+        ))}
+      </div>
+
+      {/* Listing content */}
+      <div style={{ padding: 16, borderBottom: '1px solid #e7e7e7' }}>
+        {platform === 'poshmark'
+          ? <PoshmarkContent pm={pm} expanded={expanded} setExpanded={setExpanded} />
+          : <EbayContent eb={eb} expanded={expanded} setExpanded={setExpanded} />
+        }
+      </div>
+
+      {/* Copy button */}
+      <div style={{ padding: '12px 16px' }}>
+        <button
+          onClick={copyListing}
+          style={{
+            width: '100%', height: 44, borderRadius: 10,
+            border: '1px solid #d4d4d4', background: '#ffffff',
+            color: copied ? '#4f6ef7' : '#1a1a1a',
+            fontSize: 14, fontWeight: 500, cursor: 'pointer',
+            fontFamily: 'Inter, sans-serif', transition: 'color 0.15s',
+          }}
+        >
+          {copied ? '✓ Copied!' : `Copy ${platform === 'poshmark' ? 'Poshmark' : 'eBay'} listing`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   ROOT APP
+══════════════════════════════════════════ */
+function App() {
+  const [screen, setScreen] = useState('upload');
+  const [selectedPhotos, setSelectedPhotos] = useState([]);
+
+  function handleAnalyze(photos) {
+    setSelectedPhotos(photos);
+    setScreen('processing');
+  }
+
+  function handleDone() {
+    setScreen('results');
+  }
+
+  function handleReset() {
+    setSelectedPhotos([]);
+    setScreen('upload');
+  }
+
+  return (
+    <>
+      {screen === 'upload' && <UploadScreen onAnalyze={handleAnalyze} />}
+      {screen === 'processing' && <ProcessingScreen photos={selectedPhotos} onDone={handleDone} />}
+      {screen === 'results' && <ResultsScreen photos={selectedPhotos} onReset={handleReset} />}
+    </>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

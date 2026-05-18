@@ -21,16 +21,18 @@ Supports single-item analysis and batch jobs (multiple photos processed concurre
 
 ## Tech stack
 
-| Layer | Technology |
-|---|---|
-| API | FastAPI (async) |
-| AI / Vision | OpenAI GPT-4o (`gpt-4o`) with structured outputs |
-| Image guard | AWS Rekognition |
-| Image storage | AWS S3 |
-| Pricing data | eBay Browse API (sold listings) |
-| Job persistence | AWS DynamoDB |
-| Config | Pydantic Settings |
-| Logging | structlog (structured JSON) |
+
+| Layer           | Technology                                       |
+| --------------- | ------------------------------------------------ |
+| API             | FastAPI (async)                                  |
+| AI / Vision     | OpenAI GPT-4o (`gpt-4o`) with structured outputs |
+| Image guard     | AWS Rekognition                                  |
+| Image storage   | AWS S3                                           |
+| Pricing data    | eBay Browse API (sold listings)                  |
+| Job persistence | AWS DynamoDB                                     |
+| Config          | Pydantic Settings                                |
+| Logging         | structlog (structured JSON)                      |
+
 
 ---
 
@@ -144,6 +146,29 @@ curl -X POST http://localhost:8000/api/v1/items/analyze \
 
 ---
 
+## Demo
+
+See the full pipeline in action without running the backend:
+
+Open `flipr-demo/index.html` directly in any browser. 
+No server or build step needed.
+
+The interactive demo shows:
+
+- Upload screen: add up to 3 clothing items
+- Processing screen: real-time batch analysis progress
+- Results screen: platform-specific listings (Poshmark + eBay)
+  - Poshmark: title, category, size, condition, brand, color, 
+  style tags, description, price & earnings (80% of listing price)
+  - eBay: title (with character count), category, condition, 
+  item specifics, description, format & price
+  - Copy listings as formatted text ready to paste into either platform
+
+Tech: Single-file React app, no dependencies, Tailwind-inspired 
+design system matching the wireframes.
+
+---
+
 ## API reference
 
 ### `POST /api/v1/items/analyze`
@@ -151,11 +176,13 @@ curl -X POST http://localhost:8000/api/v1/items/analyze \
 Analyze a single item image synchronously.
 
 **Form fields:**
+
 - `image` (file, required) — JPEG or PNG
 - `chest_width_inches` (float, optional) — laid-flat chest measurement
 - `body_length_inches` (float, optional) — laid-flat body length
 
 **Response:**
+
 ```json
 {
   "metadata": {
@@ -202,6 +229,7 @@ Analyze a single item image synchronously.
 Request presigned S3 URLs for direct client-side uploads. Returns one URL per file.
 
 **Body:**
+
 ```json
 {
   "files": [
@@ -211,6 +239,7 @@ Request presigned S3 URLs for direct client-side uploads. Returns one URL per fi
 ```
 
 **Response:**
+
 ```json
 {
   "job_id": "uuid",
@@ -233,6 +262,7 @@ Upload image bytes directly to S3 — this request goes to S3, not your server.
 Trigger analysis for a job after all images have been uploaded.
 
 **Body:**
+
 ```json
 {
   "job_id": "uuid",
@@ -252,15 +282,18 @@ Poll job status and per-item results.
 
 ## Environment variables
 
-See [`backend/.env.example`](backend/.env.example) for the full list. Required:
+See `[backend/.env.example](backend/.env.example)` for the full list. Required:
 
-| Variable | Description |
-|---|---|
-| `OPENAI_API_KEY` | OpenAI API key |
-| `EBAY_APP_ID` | eBay production App ID |
-| `EBAY_CERT_ID` | eBay production Cert ID |
-| `AWS_ACCESS_KEY_ID` | AWS IAM key |
-| `AWS_SECRET_ACCESS_KEY` | AWS IAM secret |
-| `AWS_REGION` | AWS region (e.g. `us-east-1`) |
-| `S3_BUCKET_NAME` | S3 bucket for image uploads |
-| `DYNAMODB_TABLE_NAME` | DynamoDB table for job state |
+
+| Variable                | Description                   |
+| ----------------------- | ----------------------------- |
+| `OPENAI_API_KEY`        | OpenAI API key                |
+| `EBAY_APP_ID`           | eBay production App ID        |
+| `EBAY_CERT_ID`          | eBay production Cert ID       |
+| `AWS_ACCESS_KEY_ID`     | AWS IAM key                   |
+| `AWS_SECRET_ACCESS_KEY` | AWS IAM secret                |
+| `AWS_REGION`            | AWS region (e.g. `us-east-1`) |
+| `S3_BUCKET_NAME`        | S3 bucket for image uploads   |
+| `DYNAMODB_TABLE_NAME`   | DynamoDB table for job state  |
+
+

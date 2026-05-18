@@ -297,3 +297,40 @@ See `[backend/.env.example](backend/.env.example)` for the full list. Required:
 | `DYNAMODB_TABLE_NAME`   | DynamoDB table for job state  |
 
 
+---
+
+## Sprint Roadmap
+
+**Sprint 1-3** ✅ Complete
+- Batch processing with asyncio
+- AWS S3 presigned uploads + Rekognition pre-filter
+- GPT-4o Vision analysis
+- eBay Browse API pricing
+- DynamoDB persistent job storage
+
+**Sprint 4** 🚀 In Progress
+- eBay Seller API direct posting
+- Listings post live to eBay with one tap
+- Returns live listing URL
+
+**Sprint 5** Planned
+- Poshmark browser automation (Playwright)
+- Agent navigates UI and posts listings
+- Direct posting to both platforms
+
+**Sprint 6** Planned
+- AWS Lambda async job processing
+- SQS queue for batch jobs
+- CloudWatch monitoring and observability
+
+**Sprint 7** Planned
+- React Native mobile app
+- iOS/Android parity with web demo
+- Native camera integration
+
+**Sprint 8+** Roadmap
+- Inventory management
+- Multi-account seller support
+- Pricing optimization engine
+- AI-powered description enhancement
+

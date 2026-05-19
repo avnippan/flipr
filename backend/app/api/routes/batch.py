@@ -3,10 +3,13 @@ from datetime import datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from app.api.schemas import PostEbayResponse
+from app.config import settings
 from app.core.dependencies import get_batch_processor, get_job_store
-from app.core.job_models import ItemResult, JobStatus
+from app.core.job_models import ItemResult, ItemStatus, JobStatus
 from app.core.job_store import JobStore
 from app.services.batch_processor import BatchProcessor
+from app.services.ebay_poster import EbayPoster
 from app.services.storage import generate_presigned_upload
 
 router = APIRouter(prefix="/batch", tags=["batch"])
@@ -132,3 +135,78 @@ async def get_job_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     
     return JobStatusResponse(job_id=job_id, status=job.status, progress=job.progress, items=job.items, created_at=job.created_at, completed_at=job.completed_at)
+
+
+@router.post(
+    "/jobs/{job_id}/items/{item_index}/post-ebay",
+    response_model=PostEbayResponse,
+)
+async def post_item_to_ebay(
+    job_id: str,
+    item_index: int,
+    job_store: JobStore = Depends(get_job_store),
+) -> PostEbayResponse:
+    job = await job_store.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    if item_index < 0 or item_index >= len(job.items):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+
+    item = job.items[item_index]
+    if item.status != ItemStatus.SUCCESS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Item not ready")
+
+    result = item.result or {}
+    listings = result.get("listings", [])
+    ebay_listing = next((l for l in listings if l.get("platform") == "ebay"), None)
+    if ebay_listing is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No eBay listing found")
+
+    metadata = result.get("metadata", {})
+    comps = result.get("comps", {})
+    raw_condition = metadata.get("condition")
+
+    listing_data = {
+        "title": ebay_listing["title"],
+        "description": ebay_listing.get("description", ""),
+        "price": comps.get("suggested_price", 0.0),
+        "condition": raw_condition.title() if raw_condition else None,
+        "brand": metadata.get("brand"),
+        "size": metadata.get("size"),
+        "color": metadata.get("color"),
+        "material": metadata.get("material"),
+        "item_type": metadata.get("item_type"),
+        "s3_url": result.get("s3_url"),
+    }
+
+    poster = EbayPoster(
+        user_token=settings.ebay_user_token,
+        fulfillment_policy_id=settings.ebay_fulfillment_policy_id,
+        payment_policy_id=settings.ebay_payment_policy_id,
+        return_policy_id=settings.ebay_return_policy_id,
+        merchant_location_key=settings.ebay_merchant_location_key,
+    )
+
+    ebay_result = await poster.post_listing(listing_data)
+
+    if ebay_result.success:
+        await job_store.update_item(
+            job_id,
+            item_index,
+            ItemStatus.SUCCESS,
+            result={
+                **result,
+                "ebay_listing_id": ebay_result.listing_id,
+                "ebay_listing_url": ebay_result.listing_url,
+                "ebay_posted_at": datetime.utcnow().isoformat(),
+            },
+            error=None,
+        )
+        return PostEbayResponse(
+            success=True,
+            listing_url=ebay_result.listing_url,
+            listing_id=ebay_result.listing_id,
+        )
+
+    return PostEbayResponse(success=False, error=ebay_result.error)

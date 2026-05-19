@@ -2,6 +2,7 @@ import asyncio
 
 import structlog
 
+from app.config import settings
 from app.core.job_models import JobStatus, ItemStatus
 from app.core.job_store import JobStore
 from app.services.listing import draft_listings
@@ -56,10 +57,13 @@ class BatchProcessor:
             comps = await fetch_sold_comps(metadata.search_query)
             listings = await draft_listings(metadata, comps)
 
+            s3_url = f"https://{settings.s3_bucket_name}.s3.{settings.aws_region}.amazonaws.com/{s3_key}"
+
             result = {
                 "metadata": metadata.model_dump(),
                 "comps": comps.model_dump(),
                 "listings": [listing.model_dump() for listing in listings],
+                "s3_url": s3_url,
             }
 
             await self._store.update_item(

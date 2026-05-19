@@ -14,6 +14,7 @@ Resellers spend most of their time on two things: figuring out what an item is w
 4. **Live pricing** — eBay Browse API pulls recent sold listings and calculates a suggested price at 95th-percentile median (priced to move, not to sit)
 5. **Platform-specific listings** — GPT-4o drafts separate listings for Poshmark and eBay, each following that platform's voice, format rules, and character limits
 6. **Quality enforcement** — a deterministic post-processing pass strips marketing language, enforces hashtag format, and maps category fields — no hallucinated categories or banned phrases ever reach the user
+7. **Direct eBay posting** — one-tap publishes the listing live to eBay via the Sell API and returns the live listing URL
 
 Supports single-item analysis and batch jobs (multiple photos processed concurrently).
 
@@ -29,6 +30,7 @@ Supports single-item analysis and batch jobs (multiple photos processed concurre
 | Image guard     | AWS Rekognition                                  |
 | Image storage   | AWS S3                                           |
 | Pricing data    | eBay Browse API (sold listings)                  |
+| eBay Posting    | eBay Sell API (Inventory, Offer, Publish)         |
 | Job persistence | AWS DynamoDB                                     |
 | Config          | Pydantic Settings                                |
 | Logging         | structlog (structured JSON)                      |
@@ -65,6 +67,12 @@ POST /api/v1/items/analyze          POST /api/v1/batch/uploads → PUT {presigne
          │
          ▼
  DynamoDB update → poll /jobs/{id}
+         │
+         ▼ (optional, per item)
+ POST /items/{index}/post-ebay
+         │
+         ▼
+ eBay Sell API → live listing URL
 ```
 
 ---
@@ -277,6 +285,23 @@ Trigger analysis for a job after all images have been uploaded.
 ### `GET /api/v1/batch/jobs/{job_id}`
 
 Poll job status and per-item results.
+
+### `POST /api/v1/batch/jobs/{job_id}/items/{item_index}/post-ebay`
+
+Publish a completed item's eBay listing live to eBay and return the listing URL.
+
+**Path parameters:**
+
+- `job_id` — UUID of the batch job
+- `item_index` — zero-based index of the item within the job
+
+**Response:**
+
+```json
+{
+  "listing_url": "https://www.ebay.com/itm/123456789012"
+}
+```
 
 ---
 

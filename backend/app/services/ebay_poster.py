@@ -93,6 +93,7 @@ class EbayPoster:
     ) -> None:
         aspects: dict[str, list[str]] = {
             "Department": ["Men"],
+            "Brand": [listing_data["brand"]] if listing_data.get("brand") else ["Unbranded"],
             "Size": [listing_data["size"]] if listing_data.get("size") else ["See description"],
             "Size Type": ["Regular"],
             "Sleeve Length": ["Long Sleeve"] if "long" in (listing_data.get("item_type") or "").lower() else ["Short Sleeve"],
@@ -100,7 +101,6 @@ class EbayPoster:
             "Fit": ["Regular"],
         }
         for key, label in (
-            ("brand", "Brand"),
             ("color", "Color"),
             ("material", "Material"),
         ):

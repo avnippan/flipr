@@ -18,8 +18,8 @@ app.include_router(batch_router, prefix="/api/v1")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -1,6 +1,6 @@
 # Flipr
 
-An AI-powered listing assistant for thrift resellers. Snap a photo of a clothing item and get back a priced, platform-ready listing in seconds — no manual research, no writing from scratch.
+An AI-powered resale automation tool. Upload a clothing photo and get back platform-specific listings for Poshmark and eBay with real comp pricing — then publish directly to eBay in one tap via the Sell API. Poshmark direct posting and cross-market pricing coming in Sprint 5.
 
 ---
 
@@ -14,7 +14,7 @@ Resellers spend most of their time on two things: figuring out what an item is w
 4. **Live pricing** — eBay Browse API pulls recent sold listings and calculates a suggested price at 95th-percentile median (priced to move, not to sit)
 5. **Platform-specific listings** — GPT-4o drafts separate listings for Poshmark and eBay, each following that platform's voice, format rules, and character limits
 6. **Quality enforcement** — a deterministic post-processing pass strips marketing language, enforces hashtag format, and maps category fields — no hallucinated categories or banned phrases ever reach the user
-7. **Direct eBay posting** — one-tap publishes the listing live to eBay via the Sell API and returns the live listing URL
+7. **Direct eBay posting** — one-tap publish to eBay via the Sell API (createOrReplaceInventoryItem → createOffer → publishOffer). Returns a live listing URL. Poshmark direct posting is next; currently generates platform-ready drafts.
 
 Supports single-item analysis and batch jobs (multiple photos processed concurrently).
 
@@ -31,6 +31,7 @@ Supports single-item analysis and batch jobs (multiple photos processed concurre
 | Image storage   | AWS S3                                           |
 | Pricing data    | eBay Browse API (sold listings)                  |
 | eBay Posting    | eBay Sell API (Inventory, Offer, Publish)         |
+| Posting         | eBay Sell API (Inventory + Account + Fulfillment) |
 | Job persistence | AWS DynamoDB                                     |
 | Config          | Pydantic Settings                                |
 | Logging         | structlog (structured JSON)                      |
@@ -68,11 +69,8 @@ POST /api/v1/items/analyze          POST /api/v1/batch/uploads → PUT {presigne
          ▼
  DynamoDB update → poll /jobs/{id}
          │
-         ▼ (optional, per item)
- POST /items/{index}/post-ebay
-         │
          ▼
- eBay Sell API → live listing URL
+POST /items/{index}/post-ebay → eBay Sell API → live listing URL
 ```
 
 ---
@@ -288,18 +286,18 @@ Poll job status and per-item results.
 
 ### `POST /api/v1/batch/jobs/{job_id}/items/{item_index}/post-ebay`
 
-Publish a completed item's eBay listing live to eBay and return the listing URL.
+Post a completed item directly to eBay as a live listing.
 
-**Path parameters:**
-
-- `job_id` — UUID of the batch job
-- `item_index` — zero-based index of the item within the job
+**No request body needed.**
 
 **Response:**
 
 ```json
 {
-  "listing_url": "https://www.ebay.com/itm/123456789012"
+  "success": true,
+  "listing_id": "198365240579",
+  "listing_url": "https://www.ebay.com/itm/198365240579",
+  "error": null
 }
 ```
 
@@ -320,6 +318,11 @@ See `[backend/.env.example](backend/.env.example)` for the full list. Required:
 | `AWS_REGION`            | AWS region (e.g. `us-east-1`) |
 | `S3_BUCKET_NAME`        | S3 bucket for image uploads   |
 | `DYNAMODB_TABLE_NAME`   | DynamoDB table for job state  |
+| `EBAY_USER_TOKEN`             | eBay OAuth user token for Sell API posting    |
+| `EBAY_FULFILLMENT_POLICY_ID`  | eBay fulfillment policy ID                    |
+| `EBAY_PAYMENT_POLICY_ID`      | eBay payment policy ID                        |
+| `EBAY_RETURN_POLICY_ID`       | eBay return policy ID                         |
+| `EBAY_MERCHANT_LOCATION_KEY`  | eBay merchant location key                    |
 
 
 ---

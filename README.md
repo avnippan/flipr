@@ -30,8 +30,7 @@ Supports single-item analysis and batch jobs (multiple photos processed concurre
 | Image guard     | AWS Rekognition                                  |
 | Image storage   | AWS S3                                           |
 | Pricing data    | eBay Browse API (sold listings)                  |
-| eBay Posting    | eBay Sell API (Inventory, Offer, Publish)         |
-| Posting         | eBay Sell API (Inventory + Account + Fulfillment) |
+| eBay Posting    | eBay Sell API (Inventory + Account + Fulfillment) |
 | Job persistence | AWS DynamoDB                                     |
 | Config          | Pydantic Settings                                |
 | Logging         | structlog (structured JSON)                      |
@@ -169,6 +168,7 @@ The interactive demo shows:
   - eBay: title (with character count), category, condition, 
   item specifics, description, format & price
   - Copy listings as formatted text ready to paste into either platform
+  - **Post to eBay** button publishes the listing live via the Sell API and returns a clickable listing URL
 
 Tech: Single-file React app, no dependencies, Tailwind-inspired 
 design system matching the wireframes.
@@ -336,15 +336,14 @@ See `[backend/.env.example](backend/.env.example)` for the full list. Required:
 - eBay Browse API pricing
 - DynamoDB persistent job storage
 
-**Sprint 4** 🚀 In Progress
-- eBay Seller API direct posting
-- Listings post live to eBay with one tap
-- Returns live listing URL
+**Sprint 4** ✅ Complete
+- eBay Sell API direct posting (createOrReplaceInventoryItem → createOffer → publishOffer)
+- One-tap publish from UI returns a live eBay listing URL
 
-**Sprint 5** Planned
-- Poshmark browser automation (Playwright)
-- Agent navigates UI and posts listings
-- Direct posting to both platforms
+**Sprint 5** 🚀 In Progress
+- Cross-market pricing via Playwright scrapers (Poshmark, Mercari, Depop sold comps)
+- Per-platform price recommendations with confidence scoring
+- Comp aggregation across all 4 sources (eBay + 3 scrapers)
 
 **Sprint 6** Planned
 - AWS Lambda async job processing

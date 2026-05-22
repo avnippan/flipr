@@ -70,7 +70,7 @@ POST /api/v1/items/analyze          POST /api/v1/batch/uploads → PUT {presigne
  DynamoDB update → poll /jobs/{id}
          │
          ▼
-POST /items/{index}/post-ebay → eBay Sell API → live listing URL
+POST /batch/jobs/{job_id}/items/{index}/post-ebay → eBay Sell API → live listing URL
 ```
 
 ---

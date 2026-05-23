@@ -1,4 +1,4 @@
-# Cross-Market Pricing Scrapers (Sprint 5)
+# Cross-Market Pricing Scrapers
 
 ## Status: Research Prototype
 

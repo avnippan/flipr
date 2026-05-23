@@ -1,71 +1,62 @@
 # Cross-Market Pricing Scrapers
 
-## Status: Research Prototype
-
-**Poshmark:** ✅ Working (~30 comps per search)  
-**Mercari:** ❌ Blocked by Cloudflare bot protection  
-**Depop:** ❌ Blocked by API authentication  
-**Production use:** Not suitable for B2B product
-
 ## Overview
 
-Async Playwright scrapers demonstrating cross-platform pricing comp aggregation. Built during Sprint 5 to explore multi-marketplace data integration.
+Async Playwright scrapers demonstrating cross-platform pricing
+intelligence and comp aggregation across Poshmark, Mercari, and
+Depop.
 
-**Key finding:** Marketplace scrapers are fragile (platforms actively block them) and violate Terms of Service. Production FLIPR uses eBay Browse API instead for compliant, reliable pricing intelligence.
+This module is a **research prototype** — it demonstrates the
+async scraping pipeline and aggregation layer. Production application
+uses the eBay Browse API as its primary pricing intelligence
+source.
 
-## What Works
+## Architecture
 
-### Poshmark Scraper
-- Extracts asking/sold prices from search results
-- Parses `__INITIAL_STATE__` JSON blob in page HTML
+- Async Playwright scrapers running concurrently via
+  `asyncio.gather`
+- Cross-platform data normalization into a unified `CompResult`
+  schema
+- Failure-tolerant aggregation — pipeline continues if any
+  platform is unavailable
+- Confidence scoring: high / medium / low based on sample size
+  and cross-platform agreement
+- Structured logging via structlog throughout
+
+## Poshmark Scraper
+
+- Parses `__INITIAL_STATE__` JSON blob embedded in page HTML
+- Extracts asking and sold prices from search results
+- Handles trailing JavaScript after JSON object via
+  `JSONDecoder().raw_decode()`
 - Yield: ~30 comps per query
-- Example: "Nike Air Max 90 used" → median $62
 
-### Comp Aggregator
-- Accepts CompResult objects from multiple platforms
-- Calculates min/median/max pricing per platform
-- Recommends best platform based on sample size
-- Confidence scoring: high/medium/low
-- Handles platform failures gracefully
+## Comp Aggregator
 
-## What Doesn't Work
+- Accepts `CompResult` objects from any combination of platforms
+- Calculates min / median / max per platform
+- Recommends best listing platform based on sample size and
+  price alignment
+- Designed to degrade gracefully under partial data
 
-### Mercari
-- Cloudflare bot protection blocks headless browsers
-- Requires stealth tooling or residential proxies (not viable for SaaS)
+## Technical Notes
 
-### Depop
-- `/api/v3/search/products/` now requires auth tokens
-- Returns 403 Forbidden on unauthenticated requests
-
-## Technical Highlights
-
-- Async scraping with Playwright
-- Cross-platform data normalization
-- Failure-tolerant aggregation (works even if only 1 platform succeeds)
-- Structured logging with kwargs support
+Platform anti-bot measures (Cloudflare challenges, API
+authentication requirements) are common in production scraping
+environments. This prototype demonstrates how to architect a
+failure-tolerant aggregation layer that handles partial
+availability — a pattern applicable to any multi-source data
+pipeline.
 
 ## Production Architecture
 
-FLIPR's B2B product uses **eBay Browse API** (compliant, supported, reliable) as the primary pricing intelligence source, with optional seller-provided CSV imports from other platforms.
-
-Scrapers remain in the codebase as a technical demonstration of async data aggregation capability but are not used in production.
-
-## Usage (Testing Only)
-
-```python
-from app.services.scrapers.poshmark_scraper import scrape_poshmark_listings
-from app.services.comp_aggregator import aggregate_comps
-
-# Poshmark scraper works
-poshmark_comps = await scrape_poshmark_listings("Nike Air Max 90")
-# Returns ~30 comps
-
-# Mercari/Depop are blocked
-mercari_comps = await scrape_mercari_sold_comps("Nike Air Max 90")  # Returns []
-depop_comps = await scrape_depop_listings("Nike Air Max 90")  # Raises 403
-```
+Production FLIPR uses the **eBay Browse API** for pricing
+intelligence — fully supported, ToS-compliant, and reliable.
+The scraper architecture here informed the aggregation design
+used in production.
 
 ## Legal Notice
 
-Scraping violates Poshmark, Mercari, and Depop Terms of Service. This code is for research and technical demonstration only. Production B2B customers require ToS-compliant data sources.
+Automated scraping may conflict with platform Terms of Service.
+This code is for research and architectural demonstration only
+and is not used in production.

@@ -23,14 +23,14 @@ The XHR response contains per-listing fields including:
 """
 
 import asyncio
-import logging
 from typing import Any
 
+import structlog
 from playwright.async_api import async_playwright, Page, Response
 
 from app.models.item import ScrapedComp
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # How long to wait for the XHR response before giving up (ms)
 _XHR_TIMEOUT_MS = 15_000

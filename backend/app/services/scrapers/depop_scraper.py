@@ -24,14 +24,14 @@ Pagination:
     We fetch one page only — 24 results is sufficient for comp pricing.
 """
 
-import logging
 from typing import Any
 
 import httpx
+import structlog
 
 from app.models.item import ScrapedComp
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _DEFAULT_MAX_RESULTS = 24
 _TIMEOUT_SECONDS = 10.0
@@ -86,6 +86,7 @@ async def scrape_depop_listings(
         headers=_DEFAULT_HEADERS,
         timeout=_TIMEOUT_SECONDS,
         follow_redirects=True,
+        verify=False,
     ) as client:
         response = await client.get(_SEARCH_URL, params=params)
         response.raise_for_status()

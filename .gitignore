@@ -42,3 +42,8 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Test scripts (not needed in repo)
+test_scrapers.py
+test_*.py
+*_test.py

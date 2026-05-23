@@ -20,14 +20,14 @@ URL pattern:
 """
 
 import json
-import logging
 from typing import Any
 
 import httpx
+import structlog
 
 from app.models.item import ScrapedComp
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 _DEFAULT_MAX_RESULTS = 30
 _TIMEOUT_SECONDS = 15.0
@@ -82,6 +82,7 @@ async def scrape_poshmark_listings(
         headers=_DEFAULT_HEADERS,
         timeout=_TIMEOUT_SECONDS,
         follow_redirects=True,
+        verify=False,
     ) as client:
         response = await client.get(_SEARCH_URL, params=params)
         response.raise_for_status()
@@ -114,7 +115,9 @@ def _extract_posts(html: str) -> list[dict[str, Any]]:
     raw = html[start:end]
 
     try:
-        state = json.loads(raw)
+        # raw_decode stops after the first valid JSON value, ignoring any
+        # trailing JS (semicolons, more statements) before </script>
+        state, _ = json.JSONDecoder().raw_decode(raw.lstrip())
     except json.JSONDecodeError as exc:
         logger.warning("poshmark: failed to parse __INITIAL_STATE__", error=str(exc))
         return []

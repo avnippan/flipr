@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # OpenAI
-    openai_api_key: str
+    openai_api_key: str = ""
     openai_vision_model: str = "gpt-4o"
 
     # eBay 
@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     s3_bucket_name: str = ""
     dynamodb_table_name: str = "flipr-jobs"
+
+    # Bedrock
+    bedrock_model_id: str = "us.anthropic.claude-sonnet-4-5-20251001"
+    use_bedrock: bool = True
+    
+    # Bedrock Guardrails
+    bedrock_guardrail_id: str = ""
+    bedrock_guardrail_version: str = "DRAFT"
+
 
 # Single shared instance — import this everywhere, never instantiate Settings() twice
 settings = Settings()

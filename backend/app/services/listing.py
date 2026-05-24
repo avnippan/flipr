@@ -412,6 +412,10 @@ async def _draft_for_platform(
     platform: str,
 ) -> ListingDraft:
     """Generate a listing draft for one platform."""
+    if settings.use_bedrock:
+        from app.services.bedrock_listing import get_bedrock_listing_service
+        return await get_bedrock_listing_service().draft_for_platform(item, comps, platform)
+
     log = logger.bind(platform=platform, item_type=item.item_type, brand=item.brand)
     log.info("listing_draft_start")
 

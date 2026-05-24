@@ -46,10 +46,14 @@ def hash_image(image_bytes: bytes) -> str:
 )
 async def analyze_image(image_bytes: bytes, mime_type: str, measurements: dict = None) -> ItemMetadata:
     """
-    Send image to GPT-4o and return structured item metadata.
+    Send image to vision model and return structured item metadata.
     Retries on timeout and rate limit errors with exponential backoff.
     Raises ValueError on refusal, ValidationError on schema mismatch.
     """
+    if settings.use_bedrock:
+        from app.services.bedrock_vision import get_bedrock_vision_service
+        return await get_bedrock_vision_service().analyze_image(image_bytes, mime_type, measurements)
+
     measurement_context = ""
     if measurements:
         measurement_context = f"""

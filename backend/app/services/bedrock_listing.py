@@ -95,6 +95,11 @@ class BedrockListingService:
                 _build_prompt(item, comps, platform),
             )
             
+            # Check for guardrail block message
+            if "content policy restrictions" in raw_text.lower():
+                log.warning("bedrock_listing_guardrail_blocked", response=raw_text)
+                raise ValueError(raw_text)  # Return the guardrail message directly
+            
             clean_json = _strip_json_markdown(raw_text)
             draft = ListingDraft(**json.loads(clean_json))
             draft.platform = platform
@@ -108,7 +113,7 @@ class BedrockListingService:
                 quality_score=scores["overall"],
             )
             return draft
-            
+        
         except json.JSONDecodeError as e:
             log.error(
                 "bedrock_listing_json_parse_error",

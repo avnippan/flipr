@@ -135,6 +135,12 @@ class BedrockVisionService:
             raw_text = await asyncio.to_thread(
                 self._call_converse, image_bytes, image_format, prompt
             )
+            
+            # Check for guardrail block message BEFORE trying to parse JSON
+            if "content policy restrictions" in raw_text.lower():
+                log.warning("bedrock_vision_guardrail_blocked", response=raw_text)
+                raise ValueError(raw_text)
+            
             clean_json = _strip_json_markdown(raw_text)
             result = ItemMetadata(**json.loads(clean_json))
             
@@ -144,15 +150,13 @@ class BedrockVisionService:
                 brand=result.brand,
             )
             return result
-            
+    
         except json.JSONDecodeError as e:
             log.error("bedrock_vision_json_parse_error", error=str(e), response=raw_text[:200])
             raise ValueError(f"Failed to parse vision response as JSON: {e}")
         except ValueError as e:
-            # ItemMetadata validation failed
             log.error("bedrock_vision_validation_error", error=str(e))
             raise
-
 
 _service: BedrockVisionService | None = None
 

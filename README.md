@@ -86,30 +86,34 @@ POST /batch/jobs/{job_id}/items/{index}/post-ebay → eBay Sell API → live lis
 ---
 
 ## Project structure
+
+```
 backend/
-├── main.py                   # FastAPI app, routers, CORS
+├── main.py                      # FastAPI app, routers, CORS
 ├── requirements.txt
 ├── .env.example
+├── test_bedrock_integration.py  # Bedrock integration test harness
 └── app/
-├── config.py             # Pydantic Settings
-├── api/
-│   ├── schemas.py        # Request/response models
-│   └── routes/
-│       ├── items.py      # POST /items/analyze
-│       └── batch.py      # POST /batch/uploads, POST /batch/analyze, GET /batch/jobs/{id}
-├── core/
-│   ├── job_models.py     # JobStatus, ItemStatus enums
-│   ├── job_store.py      # Abstract job store interface
-│   └── dynamo_job_store.py  # DynamoDB implementation
-├── models/
-│   └── item.py           # ItemMetadata, CompResult, ListingDraft
-└── services/
-├── bedrock_vision.py # Bedrock Claude 4.5 image analysis
-├── bedrock_listing.py # Bedrock Claude 4.5 listing generation
-├── vision.py         # Vision service router (Bedrock/OpenAI)
-├── listing.py        # Listing service router + validation
-├── pricing.py        # eBay sold comps + price calculation
-└── storage.py        # S3 download
+    ├── config.py                # Pydantic Settings
+    ├── api/
+    │   ├── schemas.py           # Request/response models
+    │   └── routes/
+    │       ├── items.py         # POST /items/analyze
+    │       └── batch.py         # POST /batch/uploads, POST /batch/analyze, GET /batch/jobs/{id}
+    ├── core/
+    │   ├── job_models.py        # JobStatus, ItemStatus enums
+    │   ├── job_store.py         # Abstract job store interface
+    │   └── dynamo_job_store.py  # DynamoDB implementation
+    ├── models/
+    │   └── item.py              # ItemMetadata, CompResult, ListingDraft
+    └── services/
+        ├── bedrock_vision.py    # Bedrock Claude 4.5 image analysis
+        ├── bedrock_listing.py   # Bedrock Claude 4.5 listing generation
+        ├── vision.py            # Vision service router (Bedrock/OpenAI)
+        ├── listing.py           # Listing service router + validation
+        ├── pricing.py           # eBay sold comps + price calculation
+        └── storage.py           # S3 download
+```
 
 ---
 

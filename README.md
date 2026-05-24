@@ -1,6 +1,6 @@
 # Flipr
 
-An AI-powered resale automation tool. Upload a clothing photo and get back platform-specific listings for Poshmark and eBay with real comp pricing — then publish directly to eBay in one tap via the Sell API. Poshmark direct posting and cross-market pricing coming in Sprint 5.
+An AI-powered resale automation tool. Upload a clothing photo and get back platform-specific listings for Poshmark and eBay with real comp pricing — then publish directly to eBay in one tap via the Sell API.
 
 ---
 
@@ -9,12 +9,12 @@ An AI-powered resale automation tool. Upload a clothing photo and get back platf
 Resellers spend most of their time on two things: figuring out what an item is worth and writing the listing. Flipr automates both.
 
 1. **Upload a photo** — image goes to S3
-2. **AI identifies the item** — GPT-4o Vision reads brand, type, condition, color, material, and notable details
-3. **Clothing guard** — AWS Rekognition confirms it's actually a clothing item before burning API tokens
+2. **AI identifies the item** — AWS Bedrock Claude Sonnet 4.5 Vision reads brand, type, condition, color, material, and notable details
+3. **Content safety filter** — Bedrock Guardrails block inappropriate images before processing
 4. **Live pricing** — eBay Browse API pulls recent sold listings and calculates a suggested price at 95th-percentile median (priced to move, not to sit)
-5. **Platform-specific listings** — GPT-4o drafts separate listings for Poshmark and eBay, each following that platform's voice, format rules, and character limits
+5. **Platform-specific listings** — Bedrock Claude generates separate listings for Poshmark and eBay, each following that platform's voice, format rules, and character limits
 6. **Quality enforcement** — a deterministic post-processing pass strips marketing language, enforces hashtag format, and maps category fields — no hallucinated categories or banned phrases ever reach the user
-7. **Direct eBay posting** — one-tap publish to eBay via the Sell API (createOrReplaceInventoryItem → createOffer → publishOffer). Returns a live listing URL. Poshmark direct posting is next; currently generates platform-ready drafts.
+7. **Direct eBay posting** — one-tap publish to eBay via the Sell API (createOrReplaceInventoryItem → createOffer → publishOffer). Returns a live listing URL. Poshmark direct posting coming in Sprint 7.
 
 Supports single-item analysis and batch jobs (multiple photos processed concurrently).
 
@@ -22,12 +22,11 @@ Supports single-item analysis and batch jobs (multiple photos processed concurre
 
 ## Tech stack
 
-
 | Layer           | Technology                                       |
 | --------------- | ------------------------------------------------ |
 | API             | FastAPI (async)                                  |
-| AI / Vision     | OpenAI GPT-4o (`gpt-4o`) with structured outputs |
-| Image guard     | AWS Rekognition                                  |
+| AI / Vision     | AWS Bedrock Claude Sonnet 4.5 with Converse API  |
+| Content Safety  | AWS Bedrock Guardrails (Standard tier)           |
 | Image storage   | AWS S3                                           |
 | Pricing data    | eBay Browse API (sold listings)                  |
 | eBay Posting    | eBay Sell API (Inventory + Account + Fulfillment) |
@@ -35,54 +34,50 @@ Supports single-item analysis and batch jobs (multiple photos processed concurre
 | Config          | Pydantic Settings                                |
 | Logging         | structlog (structured JSON)                      |
 
-
 ---
 
 ## Architecture
-
-```
 POST /api/v1/items/analyze          POST /api/v1/batch/uploads → PUT {presigned_url}
-         │                          POST /api/v1/batch/analyze
-         ▼                                    │
-   [FastAPI route]                   [Create job → DynamoDB]
-         │                                    │
-         ▼                                    │ (per image, concurrent)
-   S3 download                               ▼
- Rekognition pre-filter ──────────► clothing? ──no──► FAILED
-         │ yes
-         ▼
- GPT-4o Vision → ItemMetadata
-         │
-         ▼
- eBay API → CompResult (pricing stats)
-         │
-         ▼
- GPT-4o Text → ListingDraft × 2
- (Poshmark + eBay, concurrent)
-         │
-         ▼
- Post-processing validation
- (banned phrases, hashtag format,
-  category mapping, 80-char titles)
-         │
-         ▼
- DynamoDB update → poll /jobs/{id}
-         │
-         ▼
+│                          POST /api/v1/batch/analyze
+▼                                    │
+[FastAPI route]                   [Create job → DynamoDB]
+│                                    │
+▼                                    │ (per image, concurrent)
+S3 download                               ▼
+│
+▼
+Bedrock Claude 4.5 Vision → ItemMetadata
+(with Guardrails content filter)
+│
+▼
+eBay API → CompResult (pricing stats)
+│
+▼
+Bedrock Claude 4.5 Text → ListingDraft × 2
+(Poshmark + eBay, concurrent, with Guardrails)
+│
+▼
+Post-processing validation
+(banned phrases, hashtag format,
+category mapping, 80-char titles)
+│
+▼
+DynamoDB update → poll /jobs/{id}
+│
+▼
 POST /batch/jobs/{job_id}/items/{index}/post-ebay → eBay Sell API → live listing URL
-```
 
 ---
 
 ## Key engineering decisions
 
-**Structured outputs throughout** — both vision and listing generation use `response_format=Pydantic model` via the OpenAI SDK's `.parse()` method. The model is constrained to valid JSON matching the schema; no regex parsing, no hallucinated field names.
+**AWS Bedrock with guardrails** — vision and listing generation use Claude Sonnet 4.5 via Bedrock's Converse API. Content safety is enforced at the API level via Bedrock Guardrails (Standard tier) with filters for hate speech, sexual content, violence, and prompt injection. Inappropriate images are blocked before processing; flagged listing outputs are rejected with custom error messages. Guardrail configuration is conditional — if `BEDROCK_GUARDRAIL_ID` is empty, the system runs without guardrails (useful for testing).
 
-**Rekognition as a cheap gate** — image classification via AWS Rekognition runs before the GPT-4o call. A non-clothing image (receipts, furniture, faces) is rejected early, saving ~$0.01/image in OpenAI spend.
+**Cross-region inference** — the model ID uses the `us.` prefix (`us.anthropic.claude-sonnet-4-5-20250929-v1:0`), routing requests across multiple AWS regions for better availability and lower latency. Bedrock's inference profiles handle failover automatically.
 
 **Deterministic post-processing** — listing quality is enforced programmatically after generation. A regex-based banned-phrase filter strips marketing language (`"elevate your wardrobe"`, `"must-have"`, etc.). A category map overrides the model's category guess with a known-good value. Hashtag count and format are corrected if needed. This separates "does the model understand the item" from "does the output meet spec."
 
-**Retry with exponential backoff** — all external API calls (OpenAI, eBay) use `tenacity` with `wait_exponential` and `retry_if_exception_type`. Transient failures (timeouts, rate limits) retry up to 3 times before propagating.
+**Retry with exponential backoff** — all external API calls (Bedrock, eBay) use `tenacity` with `wait_exponential` and `retry_if_exception_type`. Transient failures (timeouts, rate limits) retry up to 3 times before propagating.
 
 **Concurrent batch processing** — `asyncio.gather` runs all images in a batch in parallel. One item failing does not cancel others; each updates its own DynamoDB record independently.
 
@@ -91,38 +86,36 @@ POST /batch/jobs/{job_id}/items/{index}/post-ebay → eBay Sell API → live lis
 ---
 
 ## Project structure
-
-```
 backend/
 ├── main.py                   # FastAPI app, routers, CORS
 ├── requirements.txt
 ├── .env.example
 └── app/
-    ├── config.py             # Pydantic Settings
-    ├── api/
-    │   ├── schemas.py        # Request/response models
-    │   └── routes/
-    │       ├── items.py      # POST /items/analyze
-    │       └── batch.py      # POST /batch/uploads, POST /batch/analyze, GET /batch/jobs/{id}
-    ├── core/
-    │   ├── job_models.py     # JobStatus, ItemStatus enums
-    │   ├── job_store.py      # Abstract job store interface
-    │   └── dynamo_job_store.py  # DynamoDB implementation
-    ├── models/
-    │   └── item.py           # ItemMetadata, CompResult, ListingDraft
-    └── services/
-        ├── vision.py         # GPT-4o image analysis
-        ├── listing.py        # GPT-4o listing generation + validation
-        ├── pricing.py        # eBay sold comps + price calculation
-        ├── rekognition.py    # AWS clothing detection
-        └── storage.py        # S3 download
-```
+├── config.py             # Pydantic Settings
+├── api/
+│   ├── schemas.py        # Request/response models
+│   └── routes/
+│       ├── items.py      # POST /items/analyze
+│       └── batch.py      # POST /batch/uploads, POST /batch/analyze, GET /batch/jobs/{id}
+├── core/
+│   ├── job_models.py     # JobStatus, ItemStatus enums
+│   ├── job_store.py      # Abstract job store interface
+│   └── dynamo_job_store.py  # DynamoDB implementation
+├── models/
+│   └── item.py           # ItemMetadata, CompResult, ListingDraft
+└── services/
+├── bedrock_vision.py # Bedrock Claude 4.5 image analysis
+├── bedrock_listing.py # Bedrock Claude 4.5 listing generation
+├── vision.py         # Vision service router (Bedrock/OpenAI)
+├── listing.py        # Listing service router + validation
+├── pricing.py        # eBay sold comps + price calculation
+└── storage.py        # S3 download
 
 ---
 
 ## Local setup
 
-**Prerequisites:** Python 3.11+, AWS account with S3 + Rekognition + DynamoDB, OpenAI API key, eBay developer account.
+**Prerequisites:** Python 3.11+, AWS account with S3 + DynamoDB + Bedrock, eBay developer account.
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/flipr.git
@@ -305,59 +298,62 @@ Post a completed item directly to eBay as a live listing.
 
 ## Environment variables
 
-See `[backend/.env.example](backend/.env.example)` for the full list. Required:
+See `backend/.env.example` for the full list. Required:
 
-
-| Variable                | Description                   |
-| ----------------------- | ----------------------------- |
-| `OPENAI_API_KEY`        | OpenAI API key                |
-| `EBAY_APP_ID`           | eBay production App ID        |
-| `EBAY_CERT_ID`          | eBay production Cert ID       |
-| `AWS_ACCESS_KEY_ID`     | AWS IAM key                   |
-| `AWS_SECRET_ACCESS_KEY` | AWS IAM secret                |
-| `AWS_REGION`            | AWS region (e.g. `us-east-1`) |
-| `S3_BUCKET_NAME`        | S3 bucket for image uploads   |
-| `DYNAMODB_TABLE_NAME`   | DynamoDB table for job state  |
-| `EBAY_USER_TOKEN`             | eBay OAuth user token for Sell API posting    |
-| `EBAY_FULFILLMENT_POLICY_ID`  | eBay fulfillment policy ID                    |
-| `EBAY_PAYMENT_POLICY_ID`      | eBay payment policy ID                        |
-| `EBAY_RETURN_POLICY_ID`       | eBay return policy ID                         |
-| `EBAY_MERCHANT_LOCATION_KEY`  | eBay merchant location key                    |
-
+| Variable                     | Description                                      |
+| ---------------------------- | ------------------------------------------------ |
+| `AWS_ACCESS_KEY_ID`          | AWS IAM key                                      |
+| `AWS_SECRET_ACCESS_KEY`      | AWS IAM secret                                   |
+| `AWS_REGION`                 | AWS region (e.g. `us-east-1`)                    |
+| `S3_BUCKET_NAME`             | S3 bucket for image uploads                      |
+| `DYNAMODB_TABLE_NAME`        | DynamoDB table for job state                     |
+| `BEDROCK_MODEL_ID`           | Bedrock model ID (e.g. `us.anthropic.claude-sonnet-4-5-20250929-v1:0`) |
+| `USE_BEDROCK`                | Boolean flag to enable Bedrock (default: `true`) |
+| `BEDROCK_GUARDRAIL_ID`       | Bedrock Guardrails ID (optional, leave empty to disable) |
+| `BEDROCK_GUARDRAIL_VERSION`  | Guardrail version (`DRAFT` or version number)    |
+| `EBAY_APP_ID`                | eBay production App ID                           |
+| `EBAY_CERT_ID`               | eBay production Cert ID                          |
+| `EBAY_USER_TOKEN`            | eBay OAuth user token for Sell API posting       |
+| `EBAY_FULFILLMENT_POLICY_ID` | eBay fulfillment policy ID                       |
+| `EBAY_PAYMENT_POLICY_ID`     | eBay payment policy ID                           |
+| `EBAY_RETURN_POLICY_ID`      | eBay return policy ID                            |
+| `EBAY_MERCHANT_LOCATION_KEY` | eBay merchant location key                       |
 
 ---
 
 ## Sprint Roadmap
 
-**Sprint 1-3** ✅ Complete
+**Sprint 1-4** ✅ Complete
 - Batch processing with asyncio
-- AWS S3 presigned uploads + Rekognition pre-filter
-- GPT-4o Vision analysis
-- eBay Browse API pricing
+- AWS S3 presigned uploads
+- eBay Browse API pricing with fallback queries
 - DynamoDB persistent job storage
-
-**Sprint 4** ✅ Complete
 - eBay Sell API direct posting (createOrReplaceInventoryItem → createOffer → publishOffer)
 - One-tap publish from UI returns a live eBay listing URL
 
-**Sprint 5** 🚀 In Progress
+**Sprint 5** ✅ Complete
 - Cross-market pricing via Playwright scrapers (Poshmark, Mercari, Depop sold comps)
 - Per-platform price recommendations with confidence scoring
 - Comp aggregation across all 4 sources (eBay + 3 scrapers)
 
-**Sprint 6** Planned
-- AWS Lambda async job processing
-- SQS queue for batch jobs
-- CloudWatch monitoring and observability
+**Sprint 6A+6B** ✅ Complete
+- AWS Bedrock migration (Claude Sonnet 4.5 via Converse API)
+- Bedrock Guardrails integration (content safety filtering)
+- Cross-region inference for high availability
+- Graceful error handling for blocked content
+
+**Sprint 6C** 🚀 In Progress
+- CloudWatch structured logging and metrics
+- AWS hosting (Amplify frontend + Lambda/EC2 backend + Route53)
+- Live demo URL for job applications
 
 **Sprint 7** Planned
-- React Native mobile app
-- iOS/Android parity with web demo
-- Native camera integration
+- OAuth token refresh flow (eBay user tokens)
+- Poshmark direct posting API integration
+- Multi-platform publishing
 
 **Sprint 8+** Roadmap
 - Inventory management
 - Multi-account seller support
 - Pricing optimization engine
-- AI-powered description enhancement
-
+- React Native mobile app

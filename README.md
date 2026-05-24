@@ -357,7 +357,7 @@ See `backend/.env.example` for the full list. Required:
 - Multi-platform publishing
 
 **Sprint 8+** Roadmap
-- Inventory management
-- Multi-account seller support
-- Pricing optimization engine
-- React Native mobile app
+- Inventory management and sales analytics
+- Pricing optimization with ML
+- Advanced automation workflows
+- Mobile app (iOS/Android)

@@ -57,7 +57,60 @@
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "https://bvl98eh3bf.execute-api.us-east-1.amazonaws.com/dev";
+
+/* ─── Clipboard helper — navigator.clipboard requires HTTPS, so fall back
+   to the legacy execCommand trick when running on plain HTTP (e.g. S3
+   static website hosting has no TLS by default) ─── */
+function copyToClipboard(text) {
+  if (window.isSecureContext && navigator.clipboard) {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    try {
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.style.position = 'fixed';
+      el.style.left = '-9999px';
+      document.body.appendChild(el);
+      el.focus();
+      el.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(el);
+      ok ? resolve() : reject(new Error('copy failed'));
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+/* ─── Small per-field copy button ─── */
+function CopyField({ value, small }) {
+  const [done, setDone] = useState(false);
+  if (!value) return null;
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        copyToClipboard(String(value)).catch(() => {});
+        setDone(true);
+        setTimeout(() => setDone(false), 1200);
+      }}
+      title="Copy this field"
+      style={{
+        border: 'none', background: 'none', cursor: 'pointer', padding: 2,
+        display: 'inline-flex', alignItems: 'center', marginLeft: 6,
+        color: done ? '#4f6ef7' : '#9a9a9a', flexShrink: 0,
+      }}
+    >
+      {done ? (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+      ) : (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M3 10.5V3.5C3 2.67157 3.67157 2 4.5 2H10.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
+      )}
+    </button>
+  );
+}
 
 /* ─── Shared top bar ─── */
 function TopBar() {
@@ -143,20 +196,24 @@ function UploadScreen({ onAnalyze }) {
       <div style={{ margin: '0 20px' }}>
         <div
           onClick={!hasFiles ? () => inputRef.current.click() : undefined}
-          style={{
+          style={hasFiles ? {
+            width: '100%',
+            borderRadius: 14,
+            border: 'none',
+            background: '#ffffff',
+            cursor: 'default',
+          } : {
             position: 'relative',
             width: '100%',
             paddingTop: '100%',
             borderRadius: 14,
-            border: hasFiles ? 'none' : '1.5px dashed #c9c9c9',
-            background: hasFiles
-              ? '#ffffff'
-              : 'repeating-linear-gradient(135deg, transparent 0 10px, rgba(0,0,0,0.02) 10px 11px)',
-            cursor: hasFiles ? 'default' : 'pointer',
+            border: '1.5px dashed #c9c9c9',
+            background: 'repeating-linear-gradient(135deg, transparent 0 10px, rgba(0,0,0,0.02) 10px 11px)',
+            cursor: 'pointer',
             overflow: 'hidden',
           }}
         >
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={hasFiles ? {} : { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
             {!hasFiles ? (
               <>
                 <div style={{
@@ -173,21 +230,20 @@ function UploadScreen({ onAnalyze }) {
               </>
             ) : (
               <div style={{
-                width: '100%', height: '100%',
+                width: '100%',
                 display: 'grid',
                 gridTemplateColumns: '1fr 1fr',
                 gap: 8,
                 padding: 12,
-                alignContent: 'start',
               }}>
                 {previews.map((url, i) => (
                   <div key={i} style={{
                     position: 'relative',
                     borderRadius: 10,
-                    aspectRatio: '1',
+                    paddingTop: '100%',
                     overflow: 'hidden',
                   }}>
-                    <img src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+                    <img src={url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
                     <button
                       onClick={e => { e.stopPropagation(); removeFile(i); }}
                       style={{
@@ -205,17 +261,18 @@ function UploadScreen({ onAnalyze }) {
                   <div
                     onClick={() => inputRef.current.click()}
                     style={{
+                      position: 'relative',
+                      paddingTop: '100%',
                       background: '#f5f5f5',
                       border: '1.5px dashed #c9c9c9',
                       borderRadius: 10,
-                      aspectRatio: '1',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
                       cursor: 'pointer',
-                      flexDirection: 'column', gap: 4,
                     }}
                   >
-                    <span style={{ fontSize: 22, color: '#9a9a9a', lineHeight: 1 }}>+</span>
-                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#9a9a9a' }}>add</span>
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 22, color: '#9a9a9a', lineHeight: 1 }}>+</span>
+                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#9a9a9a' }}>add</span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -266,56 +323,56 @@ function ProcessingScreen({ files, onDone }) {
   useEffect(() => {
     let cancelled = false;
 
+    // Poll a single Lambda job (POST /jobs -> upload -> GET /jobs/{id}) until complete/failed
+    async function runOneJob(file) {
+      const createRes = await fetch(`${API_BASE}/jobs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ marketplace: 'ebay' }),
+      });
+      if (!createRes.ok) throw new Error(`create job ${createRes.status}: ${await createRes.text()}`);
+      const { job_id, upload_url } = await createRes.json();
+
+      const uploadRes = await fetch(upload_url, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'image/jpeg' },
+        body: file,
+      });
+      if (!uploadRes.ok) throw new Error(`upload ${uploadRes.status}`);
+
+      while (!cancelled) {
+        await new Promise(r => setTimeout(r, 2000));
+        if (cancelled) return null;
+        const statusRes = await fetch(`${API_BASE}/jobs/${job_id}`);
+        if (!statusRes.ok) throw new Error(`jobs ${statusRes.status}`);
+        const data = await statusRes.json();
+        if (data.status === 'complete') return { job_id, ...data };
+        if (data.status === 'failed') throw new Error(data.error || 'Job failed');
+      }
+      return null;
+    }
+
     async function run() {
       try {
-        // Step 1: Get presigned URLs
-        const urlRes = await fetch(`${API_BASE}/api/v1/batch/uploads`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ files: files.map(f => ({ mime_type: f.type })) }),
-        });
-        if (!urlRes.ok) throw new Error(`upload-url ${urlRes.status}: ${await urlRes.text()}`);
-        const { job_id, uploads } = await urlRes.json();
-
-        // Step 2: Upload files to S3 concurrently
-        await Promise.all(uploads.map((u, i) =>
-          fetch(u.presigned_url, {
-            method: 'PUT',
-            headers: { 'Content-Type': files[i].type || 'image/jpeg' },
-            body: files[i],
-          })
-        ));
-
+        // Lambda's /jobs endpoint processes one image per job, so run each
+        // uploaded photo as its own job, in parallel, then combine results.
+        const results = await Promise.all(files.map(runOneJob));
         if (cancelled) return;
         setPhase('analyzing');
+        if (cancelled) return;
 
-        // Step 3: Start batch analysis
-        const analyzeRes = await fetch(`${API_BASE}/api/v1/batch/analyze`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            job_id,
-            images: uploads.map((u, i) => ({
-              s3_key: u.s3_key,
-              mime_type: files[i].type || 'image/jpeg',
-            })),
-          }),
-        });
-        if (!analyzeRes.ok) throw new Error(`analyze ${analyzeRes.status}: ${await analyzeRes.text()}`);
-
-        // Step 4: Poll until completed
-        while (!cancelled) {
-          await new Promise(r => setTimeout(r, 2000));
-          if (cancelled) return;
-          const statusRes = await fetch(`${API_BASE}/api/v1/batch/jobs/${job_id}`);
-          if (!statusRes.ok) throw new Error(`jobs ${statusRes.status}`);
-          const data = await statusRes.json();
-          if (data.status === 'completed') {
-            if (!cancelled) onDone(job_id, data);
-            return;
-          }
-          if (data.status === 'failed') throw new Error(data.error || 'Job failed');
-        }
+        const combined = {
+          status: 'completed',
+          items: results.filter(Boolean).map(r => ({
+            job_id: r.job_id,
+            result: {
+              metadata: r.metadata,
+              comps: r.comps,
+              listings: r.listings,
+            },
+          })),
+        };
+        onDone(results[0]?.job_id || '', combined);
       } catch (err) {
         if (!cancelled) setError(err.message);
       }
@@ -360,9 +417,11 @@ function ProcessingScreen({ files, onDone }) {
 /* ══════════════════════════════════════════
    SCREEN 3: RESULTS
 ══════════════════════════════════════════ */
-function ResultsScreen({ jobId, jobData, onReset }) {
+function ResultsScreen({ jobId, jobData, previewUrls, onReset }) {
   const listings = jobData.items.map((item, index) => ({
     itemIndex: index,
+    jobId: item.job_id,
+    imageUrl: previewUrls[index],
     metadata: item.result.metadata,
     comps: item.result.comps,
     poshmark: item.result.listings.find(l => l.platform === "poshmark"),
@@ -381,7 +440,7 @@ function ResultsScreen({ jobId, jobData, onReset }) {
       {/* Scrollable listing cards */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {listings.map((listing) => (
-          <ListingCard key={listing.itemIndex} listing={listing} jobId={jobId} itemIndex={listing.itemIndex} />
+          <ListingCard key={listing.itemIndex} listing={listing} jobId={listing.jobId} itemIndex={listing.itemIndex} />
         ))}
       </div>
 
@@ -417,19 +476,67 @@ function FieldRow({ label, value }) {
   return (
     <div style={{ marginBottom: 14 }}>
       <FieldLabel>{label}</FieldLabel>
-      <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a' }}>{value}</div>
+      <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a', display: 'flex', alignItems: 'center' }}>
+        <span>{value}</span>
+        <CopyField value={value} />
+      </div>
     </div>
   );
 }
 
-function PoshmarkContent({ pm, price, expanded, setExpanded }) {
+/* ─── Pricing explainability ─── */
+function PricingExplain({ comps, price }) {
+  const [open, setOpen] = useState(false);
+  if (!comps) return null;
+  const sample = comps.sample_size;
+  const median = comps.median_price;
+  const low = comps.low_price;
+  const high = comps.high_price;
+  const rawComps = comps.raw_comps || [];
+
+  return (
+    <div style={{ marginBottom: 14, background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 8, padding: '10px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <FieldLabel>Why this price</FieldLabel>
+        {rawComps.length > 0 && (
+          <button
+            onClick={() => setOpen(o => !o)}
+            style={{ background: 'none', border: 'none', color: '#4f6ef7', fontSize: 12, cursor: 'pointer', fontFamily: 'Inter, sans-serif', padding: 0 }}
+          >{open ? 'Hide comps ↑' : `See ${Math.min(rawComps.length, 10)} comps →`}</button>
+        )}
+      </div>
+      <div style={{ fontSize: 13, color: '#1a1a1a', lineHeight: 1.5, marginTop: 4 }}>
+        {sample ? (
+          <>Priced from <strong>{sample} sold {sample === 1 ? 'listing' : 'listings'}</strong> (range ${Number(low).toFixed(2)}–${Number(high).toFixed(2)}, median ${Number(median).toFixed(2)}). Listed at <strong>${Number(price).toFixed(2)}</strong> — slightly under median to sell faster.</>
+        ) : (
+          <>No comparable sold listings found — price is an estimate.</>
+        )}
+      </div>
+      {open && rawComps.length > 0 && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {rawComps.slice(0, 10).map((c, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: '#6b6b6b' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{c.title || 'Sold item'}</span>
+              <span style={{ color: '#1a1a1a', flexShrink: 0, marginLeft: 8 }}>${Number(c.sold_price || 0).toFixed(2)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PoshmarkContent({ pm, price, comps, expanded, setExpanded }) {
   const earnings = (price * 0.80).toFixed(2);
   return (
     <>
       <FieldRow label="Title" value={pm.title || '—'} />
 
       <div style={{ marginBottom: 14 }}>
-        <FieldLabel>Description</FieldLabel>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <FieldLabel>Description</FieldLabel>
+          <CopyField value={pm.description} />
+        </div>
         <div style={{
           fontSize: 13, color: '#6b6b6b', lineHeight: 1.5,
           display: '-webkit-box', WebkitBoxOrient: 'vertical',
@@ -462,10 +569,13 @@ function PoshmarkContent({ pm, price, expanded, setExpanded }) {
         </div>
       )}
 
+      <PricingExplain comps={comps} price={price} />
+
       <div>
         <FieldLabel>Price &amp; Earnings</FieldLabel>
         <div style={{ fontSize: 13, color: '#6b6b6b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <span>Listing Price: <strong style={{ color: '#1a1a1a' }}>${price.toFixed(2)}</strong></span>
+          <CopyField value={price.toFixed(2)} />
           <span style={{ color: '#c9c9c9' }}>→</span>
           <span>Your Earnings: <strong style={{ color: '#4f6ef7' }}>${earnings}</strong></span>
         </div>
@@ -474,7 +584,7 @@ function PoshmarkContent({ pm, price, expanded, setExpanded }) {
   );
 }
 
-function EbayContent({ eb, price, expanded, setExpanded }) {
+function EbayContent({ eb, price, comps, expanded, setExpanded }) {
   const title = eb.title || '';
   const charCount = title.length;
   const specs = eb.item_specifics || {};
@@ -482,7 +592,10 @@ function EbayContent({ eb, price, expanded, setExpanded }) {
   return (
     <>
       <div style={{ marginBottom: 14 }}>
-        <FieldLabel>Title</FieldLabel>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <FieldLabel>Title</FieldLabel>
+          <CopyField value={title} />
+        </div>
         <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a' }}>{title}</div>
         <div style={{
           fontFamily: 'JetBrains Mono, monospace', fontSize: 10, marginTop: 3,
@@ -504,7 +617,10 @@ function EbayContent({ eb, price, expanded, setExpanded }) {
             {Object.entries(specs).map(([k, v]) => (
               <React.Fragment key={k}>
                 <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9a9a9a' }}>{k}</div>
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{v}</div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a', display: 'flex', alignItems: 'center' }}>
+                  <span>{v}</span>
+                  <CopyField value={v} />
+                </div>
               </React.Fragment>
             ))}
           </div>
@@ -512,7 +628,10 @@ function EbayContent({ eb, price, expanded, setExpanded }) {
       )}
 
       <div style={{ marginBottom: 14 }}>
-        <FieldLabel>Description</FieldLabel>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <FieldLabel>Description</FieldLabel>
+          <CopyField value={eb.description} />
+        </div>
         <div style={{
           fontSize: 13, color: '#6b6b6b', lineHeight: 1.5,
           display: '-webkit-box', WebkitBoxOrient: 'vertical',
@@ -524,10 +643,13 @@ function EbayContent({ eb, price, expanded, setExpanded }) {
         }}>{expanded ? 'Show less ↑' : 'Show more →'}</button>
       </div>
 
+      <PricingExplain comps={comps} price={price} />
+
       <div>
         <FieldLabel>Format &amp; Price</FieldLabel>
-        <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a' }}>
-          Buy It Now · <span style={{ color: '#4f6ef7' }}>${price.toFixed(2)}</span>
+        <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a', display: 'flex', alignItems: 'center' }}>
+          <span>Buy It Now · <span style={{ color: '#4f6ef7' }}>${price.toFixed(2)}</span></span>
+          <CopyField value={price.toFixed(2)} />
         </div>
       </div>
     </>
@@ -535,8 +657,7 @@ function EbayContent({ eb, price, expanded, setExpanded }) {
 }
 
 function ListingCard({ listing, jobId, itemIndex }) {
-  const [platform, setPlatform] = useState('poshmark');
-  const [copied, setCopied] = useState(false);
+  const [platform, setPlatform] = useState('ebay');
   const [expanded, setExpanded] = useState(false);
   const [ebayPost, setEbayPost] = useState({ status: 'idle', listingUrl: null, error: null });
 
@@ -548,77 +669,41 @@ function ListingCard({ listing, jobId, itemIndex }) {
   const title = eb.title || pm.title || 'Item';
   const condition = meta.condition || pm.condition || '—';
 
-  function copyListing() {
-    let text;
-    if (platform === 'poshmark') {
-      text = [
-        `Title: ${pm.title || ''}`,
-        pm.category ? `Category: ${pm.category}` : '',
-        pm.size || meta.size ? `Size: ${pm.size || meta.size}` : '',
-        pm.condition || meta.condition ? `Condition: ${pm.condition || meta.condition}` : '',
-        pm.brand || meta.brand ? `Brand: ${pm.brand || meta.brand}` : '',
-        pm.color || meta.color ? `Color: ${pm.color || meta.color}` : '',
-        pm.style_tags?.length ? `Style Tags: ${pm.style_tags.join(' ')}` : '',
-        `Description: ${pm.description || ''}`,
-        `Price: $${price.toFixed(2)}`,
-      ].filter(Boolean).join('\n');
-    } else {
-      const specs = eb.item_specifics || {};
-      text = [
-        `Title: ${eb.title || ''}`,
-        eb.category ? `Category: ${eb.category}` : '',
-        eb.condition || meta.condition ? `Condition: ${eb.condition || meta.condition}` : '',
-        specs.Brand || meta.brand ? `Brand: ${specs.Brand || meta.brand}` : '',
-        specs.Size || meta.size ? `Size: ${specs.Size || meta.size}` : '',
-        specs.Color || meta.color ? `Color: ${specs.Color || meta.color}` : '',
-        specs.Material ? `Material: ${specs.Material}` : '',
-        specs.Gender ? `Gender: ${specs.Gender}` : '',
-        `Description: ${eb.description || ''}`,
-        `Price: $${price.toFixed(2)}`,
-      ].filter(Boolean).join('\n');
-    }
-    navigator.clipboard.writeText(text).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
+  // No "copy full listing" blob — Poshmark and eBay's own forms use separate
+  // fields (title, category, condition, description, price, etc.), so every
+  // field below has its own copy button instead of one concatenated paste.
 
-  async function handlePostToEbay() {
-    setEbayPost({ status: 'loading', listingUrl: null, error: null });
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/batch/jobs/${jobId}/items/${itemIndex}/post-ebay`, { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        setEbayPost({ status: 'success', listingUrl: data.listing_url, error: null });
-      } else {
-        setEbayPost({ status: 'error', listingUrl: null, error: data.error || 'Posting failed' });
-      }
-    } catch (err) {
-      setEbayPost({ status: 'error', listingUrl: null, error: err.message });
-    }
-  }
+  // Live eBay posting is disabled in this public demo — it requires an admin
+  // API key that can't safely be shipped in client-side JS. The real
+  // POST /admin/post-to-ebay endpoint (with idempotency + rate limiting) is
+  // exercised separately, outside this demo.
 
   return (
     <div style={{ borderRadius: 14, border: '1px solid #e7e7e7', background: '#ffffff', overflow: 'hidden' }}>
 
       {/* Header */}
       <div style={{ padding: 16, borderBottom: '1px solid #e7e7e7', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <HatchBox size={50} label="" />
+        {listing.imageUrl ? (
+          <img src={listing.imageUrl} alt="" style={{ width: 50, height: 50, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+        ) : (
+          <HatchBox size={50} label="" />
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
           <div style={{
-            display: 'inline-block',
+            display: 'inline-flex', alignItems: 'center', gap: 4,
             fontFamily: 'JetBrains Mono, monospace', fontSize: 10,
-            textTransform: 'uppercase', letterSpacing: '0.5px',
+            letterSpacing: '0.5px',
             padding: '4px 8px', borderRadius: 999, border: '1px solid #e7e7e7',
             color: '#6b6b6b',
-          }}>{condition}</div>
+          }}><span style={{ textTransform: 'uppercase', color: '#9a9a9a' }}>Condition:</span> <span style={{ textTransform: 'capitalize' }}>{condition}</span></div>
         </div>
         <div style={{ fontSize: 22, fontWeight: 700, color: '#4f6ef7', flexShrink: 0 }}>${price.toFixed(2)}</div>
       </div>
 
       {/* Platform toggle */}
       <div style={{ padding: '12px 16px', borderBottom: '1px solid #e7e7e7', display: 'flex', gap: 8 }}>
-        {['poshmark', 'ebay'].map(p => (
+        {['ebay', 'poshmark'].map(p => (
           <button
             key={p}
             onClick={() => { setPlatform(p); setExpanded(false); }}
@@ -638,79 +723,31 @@ function ListingCard({ listing, jobId, itemIndex }) {
       {/* Listing content */}
       <div style={{ padding: 16, borderBottom: '1px solid #e7e7e7' }}>
         {platform === 'poshmark'
-          ? <PoshmarkContent pm={pm} price={price} expanded={expanded} setExpanded={setExpanded} />
-          : <EbayContent eb={eb} price={price} expanded={expanded} setExpanded={setExpanded} />
+          ? <PoshmarkContent pm={pm} price={price} comps={listing.comps} expanded={expanded} setExpanded={setExpanded} />
+          : <EbayContent eb={eb} price={price} comps={listing.comps} expanded={expanded} setExpanded={setExpanded} />
         }
       </div>
 
-      {/* Post to eBay button */}
+      {/* Post to eBay — disabled in public demo (requires admin API key) */}
       {platform === 'ebay' && (
         <div style={{ padding: '12px 16px', borderBottom: '1px solid #e7e7e7' }}>
-          {ebayPost.status === 'success' ? (
-            <a
-              href={ebayPost.listingUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                width: '100%', height: 44, borderRadius: 10,
-                background: '#16a34a', color: '#ffffff',
-                fontSize: 14, fontWeight: 500, textDecoration: 'none',
-                fontFamily: 'Inter, sans-serif',
-              }}
-            >✓ View on eBay ↗</a>
-          ) : (
-            <>
-              <button
-                onClick={handlePostToEbay}
-                disabled={ebayPost.status === 'loading'}
-                style={{
-                  width: '100%', height: 44, borderRadius: 10, border: 'none',
-                  background: ebayPost.status === 'error' ? '#dc2626' : '#4f6ef7',
-                  color: '#ffffff',
-                  fontSize: 14, fontWeight: 500,
-                  cursor: ebayPost.status === 'loading' ? 'not-allowed' : 'pointer',
-                  fontFamily: 'Inter, sans-serif',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  opacity: ebayPost.status === 'loading' ? 0.8 : 1,
-                }}
-              >
-                {ebayPost.status === 'loading' && (
-                  <div style={{
-                    width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
-                    border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#ffffff',
-                    animation: 'flipr-spin 0.8s linear infinite',
-                  }} />
-                )}
-                {ebayPost.status === 'idle' && 'Post to eBay'}
-                {ebayPost.status === 'loading' && 'Posting...'}
-                {ebayPost.status === 'error' && '✗ Failed — Retry'}
-              </button>
-              {ebayPost.status === 'error' && ebayPost.error && (
-                <div style={{
-                  marginTop: 6, fontSize: 12, color: '#dc2626',
-                  fontFamily: 'JetBrains Mono, monospace',
-                }}>{ebayPost.error}</div>
-              )}
-            </>
-          )}
+          <button
+            disabled
+            title="Live posting uses an authenticated admin endpoint, disabled here for public demo safety"
+            style={{
+              width: '100%', height: 44, borderRadius: 10, border: 'none',
+              background: '#ececec', color: '#9a9a9a',
+              fontSize: 14, fontWeight: 500, cursor: 'not-allowed',
+              fontFamily: 'Inter, sans-serif',
+            }}
+          >Post to eBay (demo mode)</button>
         </div>
       )}
 
-      {/* Copy button */}
-      <div style={{ padding: '12px 16px' }}>
-        <button
-          onClick={copyListing}
-          style={{
-            width: '100%', height: 44, borderRadius: 10,
-            border: '1px solid #d4d4d4', background: '#ffffff',
-            color: copied ? '#4f6ef7' : '#1a1a1a',
-            fontSize: 14, fontWeight: 500, cursor: 'pointer',
-            fontFamily: 'Inter, sans-serif', transition: 'color 0.15s',
-          }}
-        >
-          {copied ? '✓ Copied!' : `Copy ${platform === 'poshmark' ? 'Poshmark' : 'eBay'} listing`}
-        </button>
+      <div style={{ padding: '10px 16px 14px', textAlign: 'center' }}>
+        <span style={{ fontSize: 11, color: '#9a9a9a', fontFamily: 'JetBrains Mono, monospace' }}>
+          Tap the ⧉ icon next to any field to copy it
+        </span>
       </div>
     </div>
   );
@@ -722,11 +759,13 @@ function ListingCard({ listing, jobId, itemIndex }) {
 function App() {
   const [screen, setScreen] = useState('upload');
   const [selectedFiles, setSelectedFiles] = useState([]);
+  const [previewUrls, setPreviewUrls] = useState([]);
   const [jobId, setJobId] = useState('');
   const [jobData, setJobData] = useState(null);
 
   function handleAnalyze(files) {
     setSelectedFiles(files);
+    setPreviewUrls(files.map(f => URL.createObjectURL(f)));
     setScreen('processing');
   }
 
@@ -737,7 +776,9 @@ function App() {
   }
 
   function handleReset() {
+    previewUrls.forEach(url => URL.revokeObjectURL(url));
     setSelectedFiles([]);
+    setPreviewUrls([]);
     setJobId('');
     setJobData(null);
     setScreen('upload');
@@ -747,7 +788,7 @@ function App() {
     <>
       {screen === 'upload' && <UploadScreen onAnalyze={handleAnalyze} />}
       {screen === 'processing' && <ProcessingScreen files={selectedFiles} onDone={handleDone} />}
-      {screen === 'results' && jobData && <ResultsScreen jobId={jobId} jobData={jobData} onReset={handleReset} />}
+      {screen === 'results' && jobData && <ResultsScreen jobId={jobId} jobData={jobData} previewUrls={previewUrls} onReset={handleReset} />}
     </>
   );
 }

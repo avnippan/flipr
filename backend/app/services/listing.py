@@ -9,7 +9,7 @@ from app.config import settings
 from app.models.item import ItemMetadata, CompResult, ListingDraft
 
 logger = structlog.get_logger(__name__)
-client = AsyncOpenAI(api_key=settings.openai_api_key, http_client = httpx.AsyncClient(verify=False))
+client = None
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +35,8 @@ Your listings convert because you:
 - Never waste title characters on filler words
 - Write descriptions that remove buyer doubt with specific details
 - Include honest condition notes that prevent returns
-- Structure specs as clean bullet points
+- Put itemizable attributes (brand, color, size, material, style, graphic, etc.) into
+  item_specifics as key-value pairs — never restate them as bullets inside the description
 - Never use marketing language — eBay buyers want facts, not vibes
 - Know that eBay has a separate condition field, so you never put condition in titles
 
@@ -106,10 +107,17 @@ Item: Thrasher graphic tee, green, cotton, size M, good condition
 Listing:
 {
   "title": "Thrasher Skateboard Magazine Graphic Tee Green Cotton M",
-  "description": "Thrasher Skateboard Magazine graphic tee in green.\\n\\n- Brand: Thrasher\\n- Color: Green\\n- Size: M\\n- Material: 100% Cotton\\n- Graphic: Thrasher Skateboard Magazine logo on front\\n\\nCondition: Pre-owned, good. No holes or stains. Light pilling at collar from normal wash wear. See photos for details.",
+  "description": "Thrasher Skateboard Magazine graphic tee in green. Pre-owned, good condition — no holes or stains. Light pilling at the collar from normal wash wear. See photos for details.",
   "suggested_price": 16.00,
   "category_hint": "Men's T-Shirts",
   "hashtags": [],
+  "item_specifics": {
+    "Brand": "Thrasher",
+    "Color": "Green",
+    "Size": "M",
+    "Material": "100% Cotton",
+    "Graphic": "Thrasher Skateboard Magazine logo on front"
+  },
   "platform": "ebay"
 }
 
@@ -118,10 +126,18 @@ Item: Wrangler plaid button-up, multi-color, cotton, XL, snap buttons, two chest
 Listing:
 {
   "title": "Wrangler Western Plaid Snap Button Shirt Multi-Color XL Cotton",
-  "description": "Wrangler western-style plaid shirt with pearl snap buttons.\\n\\n- Brand: Wrangler\\n- Color: Multi-color plaid\\n- Size: XL\\n- Material: Cotton\\n- Features: Snap button front, two chest pockets, western yoke\\n\\nCondition: Pre-owned, good. All snaps functional. Minor collar fading consistent with age. No tears or stains. See photos for accurate color representation.",
+  "description": "Wrangler western-style plaid shirt with pearl snap buttons. Pre-owned, good condition — all snaps functional, minor collar fading consistent with age, no tears or stains. See photos for accurate color representation.",
   "suggested_price": 17.00,
   "category_hint": "Men's Casual Shirts",
   "hashtags": [],
+  "item_specifics": {
+    "Brand": "Wrangler",
+    "Color": "Multi-color plaid",
+    "Size": "XL",
+    "Material": "Cotton",
+    "Style": "Snap button front, western yoke",
+    "Features": "Two chest pockets"
+  },
   "platform": "ebay"
 }
 """
@@ -236,8 +252,12 @@ def _build_prompt(item: ItemMetadata, comps: CompResult, platform: str) -> str:
             "eBay-specific rules:\n"
             "- Title: max 80 characters, keyword-first (brand, type, color, size, material)\n"
             "- NO condition words in the title — eBay has a separate condition field\n"
-            "- Description: 1-sentence intro, then bullet specs, then 1 paragraph on condition with specifics\n"
-            "- If size is unlisted, end with 'Please check photos for measurements'\n"
+            "- item_specifics: put every itemizable attribute here as key-value pairs — "
+            "Brand, Color, Size, Material, Style, Graphic, and any other attribute called out "
+            "in the item details. Do NOT restate any of these in the description.\n"
+            "- Description: prose only — a 1-sentence intro, then a condition paragraph "
+            "(wear, flaws, fit notes). Never a bulleted restatement of item_specifics.\n"
+            "- If size is unlisted, end the description with 'Please check photos for measurements'\n"
             "- hashtags must be an empty list []\n"
             "- No marketing language. Facts only.\n"
         ),
@@ -264,10 +284,13 @@ Suggested listing price: ${comps.suggested_price}
 
 Return a JSON object with exactly these fields:
 - title: string (max 80 chars)
-- description: string (plain text, no markdown)
+- description: string (plain text, no markdown, prose only — condition narrative, fit notes,
+  flaws, styling suggestions. Never a bulleted restatement of item_specifics.)
 - suggested_price: number (use {comps.suggested_price})
 - category_hint: string (plain text category name, not a hashtag)
 - hashtags: list of strings (5 for poshmark, empty list for ebay)
+- item_specifics: object of key-value string pairs — Brand, Color, Size, Material, Style,
+  Graphic, and any other itemizable attribute from the item details above
 - platform: "{platform}"
 """
 
@@ -418,6 +441,10 @@ async def _draft_for_platform(
 
     log = logger.bind(platform=platform, item_type=item.item_type, brand=item.brand)
     log.info("listing_draft_start")
+
+    global client
+    if client is None:
+        client = AsyncOpenAI(api_key=settings.openai_api_key, http_client=httpx.AsyncClient(verify=False))
 
     try:
         response = await client.beta.chat.completions.parse(

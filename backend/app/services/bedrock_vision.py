@@ -55,8 +55,6 @@ class BedrockVisionService:
             self._client = boto3.client(
                 "bedrock-runtime",
                 region_name=settings.aws_region,
-                aws_access_key_id=settings.aws_access_key_id,
-                aws_secret_access_key=settings.aws_secret_access_key,
                 verify=False,
             )
         return self._client

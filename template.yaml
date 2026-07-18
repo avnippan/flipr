@@ -1,0 +1,372 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Flipr resale automation API
+
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, prod]
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+    Description: Deployment environment
+  EbayAppId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /flipr/ebay-app-id
+  EbayCertId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /flipr/ebay-cert-id
+  EbayFulfillmentPolicyId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /flipr/ebay-fulfillment-policy-id
+  EbayPaymentPolicyId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /flipr/ebay-payment-policy-id
+  EbayReturnPolicyId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /flipr/ebay-return-policy-id
+  EbayMerchantLocationKey:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /flipr/ebay-merchant-location-key
+  ApiKey:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /flipr/api-key
+  BedrockModelId:
+    Type: String
+    Default: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+  BedrockGuardrailId:
+    Type: String
+    Default: ""
+  BedrockGuardrailVersion:
+    Type: String
+    Default: DRAFT
+
+Globals:
+  Function:
+    Runtime: python3.14
+    Timeout: 60
+    MemorySize: 512
+    Architectures: [x86_64]
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+        DYNAMODB_TABLE_NAME: !Ref JobsTable
+        TOKENS_TABLE_NAME: !Ref TokensTable
+        RATE_LIMITS_TABLE_NAME: !Ref RateLimitsTable
+        S3_BUCKET_NAME: !Ref ImagesBucket
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+        USE_BEDROCK: "true"
+        BEDROCK_GUARDRAIL_ID: !Ref BedrockGuardrailId
+        BEDROCK_GUARDRAIL_VERSION: !Ref BedrockGuardrailVersion
+        EBAY_APP_ID: !Ref EbayAppId
+        EBAY_CERT_ID: !Ref EbayCertId
+        EBAY_FULFILLMENT_POLICY_ID: !Ref EbayFulfillmentPolicyId
+        EBAY_PAYMENT_POLICY_ID: !Ref EbayPaymentPolicyId
+        EBAY_RETURN_POLICY_ID: !Ref EbayReturnPolicyId
+        EBAY_MERCHANT_LOCATION_KEY: !Ref EbayMerchantLocationKey
+        API_KEY: !Ref ApiKey
+
+Resources:
+
+  # ── S3 ──────────────────────────────────────────────────────────────────────
+
+  ImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub flipr-images-${AWS::AccountId}-${Environment}
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ["*"]
+            AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
+            AllowedOrigins: ["*"]
+            MaxAge: 3600
+
+  # ── DynamoDB ─────────────────────────────────────────────────────────────────
+
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub flipr-jobs-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  TokensTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub flipr-tokens-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  RateLimitsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub flipr-rate-limits-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: date
+          AttributeType: S
+      KeySchema:
+        - AttributeName: date
+          KeyType: HASH
+
+  # ── SQS ──────────────────────────────────────────────────────────────────────
+
+  AnalysisDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub flipr-analysis-dlq-${Environment}
+      MessageRetentionPeriod: 1209600
+
+  AnalysisQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub flipr-analysis-queue-${Environment}
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 86400
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt AnalysisDLQ.Arn
+        maxReceiveCount: 3
+
+  # ── API Gateway ───────────────────────────────────────────────────────────────
+
+  FlipApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Stage
+      Cors:
+        AllowMethods: "'*'"
+        AllowHeaders: "'*'"
+        AllowOrigin: "'*'"
+      BinaryMediaTypes:
+        - "multipart/form-data"
+        - "image/jpeg"
+        - "image/png"
+        - "image/webp"
+
+  # ── Lambda ────────────────────────────────────────────────────────────────────
+
+  CreateJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub flipr-create-job-${Environment}
+      CodeUri: backend/
+      Handler: app.lambda_handlers.create_job.handler
+      Description: Create analysis job and return presigned S3 upload URL
+      Timeout: 10
+      Events:
+        CreateJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref FlipApiGateway
+            Path: /jobs
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - S3CrudPolicy:
+            BucketName: !Ref ImagesBucket
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt AnalysisQueue.QueueName
+      Environment:
+        Variables:
+          ANALYSIS_QUEUE_URL: !Ref AnalysisQueue
+
+  ProcessJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub flipr-process-job-${Environment}
+      CodeUri: backend/
+      Handler: app.lambda_handlers.process_job.handler
+      Description: Process analysis job from SQS — runs full Bedrock pipeline
+      Timeout: 300
+      MemorySize: 1024
+      Events:
+        SQSTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt AnalysisQueue.Arn
+            BatchSize: 1
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - S3CrudPolicy:
+            BucketName: !Ref ImagesBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/us.anthropic.claude-sonnet-4-5-*
+
+  GetJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub flipr-get-job-${Environment}
+      CodeUri: backend/
+      Handler: app.lambda_handlers.get_job.handler
+      Description: Retrieve job status and results
+      Timeout: 10
+      Events:
+        GetJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref FlipApiGateway
+            Path: /jobs/{job_id}
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+
+  # DEPRECATED - replaced by async job pattern (CreateJobFunction + ProcessJobFunction + GetJobFunction)
+  AnalyzeItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub flipr-analyze-item-${Environment}
+      CodeUri: backend/
+      Handler: app.lambda_handlers.analyze_item.handler
+      Description: Analyze item and generate listings (public, no auth)
+      Events:
+        AnalyzeItem:
+          Type: Api
+          Properties:
+            RestApiId: !Ref FlipApiGateway
+            Path: /items/analyze
+            Method: POST
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/us.anthropic.claude-sonnet-4-5-*
+
+  PostToEbayFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub flipr-post-to-ebay-${Environment}
+      CodeUri: backend/
+      Handler: app.lambda_handlers.post_to_ebay.handler
+      Description: Post listing to eBay (protected, API key required)
+      Events:
+        PostToEbay:
+          Type: Api
+          Properties:
+            RestApiId: !Ref FlipApiGateway
+            Path: /admin/post-to-ebay
+            Method: POST
+            Auth:
+              ApiKeyRequired: true
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TokensTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RateLimitsTable
+
+  RefreshEbayTokenFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub flipr-refresh-ebay-token-${Environment}
+      CodeUri: backend/
+      Handler: app.lambda_handlers.refresh_ebay_token.handler
+      Description: Refresh token expiry monitor
+      Events:
+        WeeklyCron:
+          Type: Schedule
+          Properties:
+            Schedule: rate(7 days)
+            Description: Check eBay refresh token expiry weekly
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TokensTable
+
+  # ── API Key + Usage Plan ──────────────────────────────────────────────────────
+
+  AdminApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    DependsOn: FlipApiGatewayStage
+    Properties:
+      Name: !Sub flipr-admin-key-${Environment}
+      Description: Admin API key for protected eBay posting endpoint
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref FlipApiGateway
+          StageName: !Ref Stage
+
+  AdminUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    DependsOn: FlipApiGatewayStage
+    Properties:
+      UsagePlanName: !Sub flipr-admin-plan-${Environment}
+      ApiStages:
+        - ApiId: !Ref FlipApiGateway
+          Stage: !Ref Stage
+      Throttle:
+        RateLimit: 5
+        BurstLimit: 10
+
+  AdminUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref AdminApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref AdminUsagePlan
+
+# ── Outputs ───────────────────────────────────────────────────────────────────
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${FlipApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+  AnalysisQueueUrl:
+    Description: SQS queue URL for analysis jobs
+    Value: !Ref AnalysisQueue
+  AnalysisDLQUrl:
+    Description: SQS dead-letter queue URL for failed analysis jobs
+    Value: !Ref AnalysisDLQ
+  AnalyzeItemFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt AnalyzeItemFunction.Arn
+  PostToEbayFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt PostToEbayFunction.Arn
+  RefreshEbayTokenFunctionArn:
+    Description: Token refresh Lambda ARN
+    Value: !GetAtt RefreshEbayTokenFunction.Arn
+  ImagesBucketName:
+    Description: S3 bucket for image uploads
+    Value: !Ref ImagesBucket
+  JobsTableName:
+    Description: DynamoDB jobs table
+    Value: !Ref JobsTable
+  TokensTableName:
+    Description: DynamoDB tokens table
+    Value: !Ref TokensTable
+  RateLimitsTableName:
+    Description: DynamoDB rate limits table
+    Value: !Ref RateLimitsTable
+  AdminApiKeyId:
+    Description: "Admin API key ID - retrieve value with: aws apigateway get-api-key --api-key <id> --include-value"
+    Value: !Ref AdminApiKey

@@ -12,7 +12,7 @@ from app.models.item import ItemMetadata
 
 logger = structlog.get_logger(__name__)
 
-client = AsyncOpenAI(api_key=settings.openai_api_key, http_client = httpx.AsyncClient(verify=False))
+client = None
 
 VISION_PROMPT = """
 You are an expert thrift reseller and brand authenticator with deep knowledge of secondhand market pricing.
@@ -77,6 +77,10 @@ async def analyze_image(image_bytes: bytes, mime_type: str, measurements: dict =
         raise ValueError(f"Unsupported image type: {mime_type}. Allowed: {settings.allowed_image_types}")
 
     b64 = base64.b64encode(image_bytes).decode()
+
+    global client
+    if client is None:
+        client = AsyncOpenAI(api_key=settings.openai_api_key, http_client=httpx.AsyncClient(verify=False))
 
     try:
         response = await client.beta.chat.completions.parse(

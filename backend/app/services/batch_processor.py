@@ -9,7 +9,6 @@ from app.services.listing import draft_listings
 from app.services.pricing import fetch_sold_comps
 from app.services.vision import analyze_image
 from app.services.storage import download_image_from_s3
-from app.services.rekognition import is_clothing
 
 logger = structlog.get_logger(__name__)
 
@@ -45,14 +44,7 @@ class BatchProcessor:
             await self._store.update_item(job_id, index, ItemStatus.PROCESSING)
             log.info("item_marked_processing")
 
-            # Step 1: Download from S3
             image_bytes = await download_image_from_s3(s3_key)
-            
-            # Step 2: Rekognition pre-filter
-            clothing_detected, labels = await is_clothing(image_bytes, mime_type)
-            if not clothing_detected:
-                raise ValueError(f"No clothing detected. Found labels: {labels}")
-
             metadata = await analyze_image(image_bytes, mime_type)
             comps = await fetch_sold_comps(metadata.search_query)
             listings = await draft_listings(metadata, comps)

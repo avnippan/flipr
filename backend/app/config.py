@@ -1,3 +1,6 @@
+from typing import Optional
+
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,14 +28,20 @@ class Settings(BaseSettings):
     api_key: str = "dev-key"
 
     # AWS
-    aws_access_key_id: str
-    aws_secret_access_key: str
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
     aws_region: str = "us-east-1"
     s3_bucket_name: str = ""
+    # Jobs table: env var is DYNAMODB_TABLE_NAME for legacy reasons; Lambda handlers read it directly
     dynamodb_table_name: str = "flipr-jobs"
+    tokens_table_name: str        # TOKENS_TABLE_NAME
+    rate_limits_table_name: str   # RATE_LIMITS_TABLE_NAME
+
+    # Runtime context
+    environment: str = Field(default="dev", env="ENVIRONMENT")
 
     # Bedrock
-    bedrock_model_id: str = "us.anthropic.claude-sonnet-4-5-20251001"
+    bedrock_model_id: str
     use_bedrock: bool = True
     
     # Bedrock Guardrails

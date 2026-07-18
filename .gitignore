@@ -7,6 +7,10 @@
 manifests/
 *.csv
 
+# SAM build artifacts
+.aws-sam/
+flipr-build.zip
+
 # Python
 venv/
 .venv/

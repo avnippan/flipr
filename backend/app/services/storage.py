@@ -17,8 +17,6 @@ def _get_s3_client():
     """Create S3 client from settings."""
     return boto3.client(
         's3',
-        aws_access_key_id=settings.aws_access_key_id,
-        aws_secret_access_key=settings.aws_secret_access_key,
         region_name=settings.aws_region,
         verify=False
     )

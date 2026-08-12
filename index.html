@@ -6,7 +6,7 @@
 <title>Flipr</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -15,7 +15,7 @@
 
   body {
     font-family: 'Inter', sans-serif;
-    background: #f0eee9;
+    background: #F2F0EB;
     min-height: 100vh;
     display: flex;
     align-items: flex-start;
@@ -26,7 +26,7 @@
   #root {
     width: 390px;
     min-height: 100vh;
-    background: #fafafa;
+    background: #F2F0EB;
     display: flex;
     flex-direction: column;
     position: relative;
@@ -45,7 +45,22 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.8px;
-    color: #6b6b6b;
+    color: #8A8378;
+  }
+
+  /* ─── Perforated hangtag edge — signature element shared by the landing
+     card and result cards. Small manila-colored notches punched along the
+     card's top edge, as if bitten out of a swing tag. ─── */
+  .tag-notch { position: relative; }
+  .tag-notch::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 8px;
+    background-image: repeating-radial-gradient(circle at 12px 0, #F2F0EB 0 5px, transparent 5px 6px);
+    background-size: 24px 8px;
+    background-repeat: repeat-x;
+    pointer-events: none;
   }
 
   ::-webkit-scrollbar { width: 0; }
@@ -58,6 +73,59 @@
 const { useState, useEffect, useRef } = React;
 
 const API_BASE = "https://bvl98eh3bf.execute-api.us-east-1.amazonaws.com/dev";
+
+/* ─── Price-tag palette — shared across every screen ─── */
+const COLORS = {
+  manila: '#F2F0EB',
+  ink: '#1C1A17',
+  tagRed: '#B8342A',
+  receiptGreen: '#3D5A3C',
+  graphite: '#8A8378',
+};
+
+/* ─── Scan history (localStorage, single-browser, no auth) ─── */
+function getJobHistory() {
+  const raw = localStorage.getItem('flipr_history');
+  if (raw === null) return [];
+  return JSON.parse(raw);
+}
+
+function saveJobToHistory(entry) {
+  const history = getJobHistory();
+  history.push(entry);
+  localStorage.setItem('flipr_history', JSON.stringify(history));
+}
+
+function formatRelativeTime(timestamp) {
+  const sec = Math.floor((Date.now() - timestamp) / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} minute${min === 1 ? '' : 's'} ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hour${hr === 1 ? '' : 's'} ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day} day${day === 1 ? '' : 's'} ago`;
+  const week = Math.floor(day / 7);
+  if (week < 5) return `${week} week${week === 1 ? '' : 's'} ago`;
+  const month = Math.floor(day / 30);
+  if (month < 12) return `${month} month${month === 1 ? '' : 's'} ago`;
+  const year = Math.floor(day / 365);
+  return `${year} year${year === 1 ? '' : 's'} ago`;
+}
+
+// Same suggested-price fallback chain ListingCard uses, applied across a
+// whole batch's items to get a price range for the History row.
+function getPriceRange(items) {
+  const prices = items
+    .map(item => {
+      const pm = item.result.listings.find(l => l.platform === 'poshmark') || {};
+      const eb = item.result.listings.find(l => l.platform === 'ebay') || {};
+      return Number(item.result.comps?.suggested_price || pm.price || eb.price || 0);
+    })
+    .filter(p => p > 0);
+  if (prices.length === 0) return null;
+  return { low: Math.min(...prices), high: Math.max(...prices) };
+}
 
 /* ─── Clipboard helper — navigator.clipboard requires HTTPS, so fall back
    to the legacy execCommand trick when running on plain HTTP (e.g. S3
@@ -100,7 +168,7 @@ function CopyField({ value, small }) {
       style={{
         border: 'none', background: 'none', cursor: 'pointer', padding: 2,
         display: 'inline-flex', alignItems: 'center', marginLeft: 6,
-        color: done ? '#4f6ef7' : '#9a9a9a', flexShrink: 0,
+        color: done ? COLORS.receiptGreen : COLORS.graphite, flexShrink: 0,
       }}
     >
       {done ? (
@@ -116,13 +184,13 @@ function CopyField({ value, small }) {
 function TopBar() {
   return (
     <div style={{ paddingTop: 56, paddingLeft: 20, paddingRight: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <span style={{ fontSize: 20, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.4px' }}>
-        Flipr<span style={{ color: '#4f6ef7' }}>.</span>
+      <span style={{ fontFamily: "'Archivo Condensed', sans-serif", fontWeight: 700, fontSize: 22, letterSpacing: '0.5px', color: COLORS.ink, textTransform: 'uppercase' }}>
+        Flipr<span style={{ color: COLORS.tagRed }}>.</span>
       </span>
       <div style={{
-        width: 32, height: 32, borderRadius: '50%', background: '#e7e7e7',
+        width: 32, height: 32, borderRadius: '50%', background: COLORS.ink,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#6b6b6b', letterSpacing: '0.4px'
+        fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: COLORS.manila, letterSpacing: '0.4px'
       }}>JD</div>
     </div>
   );
@@ -135,12 +203,12 @@ function HatchBox({ size, label }) {
     <svg width={size} height={size} style={{ borderRadius: 8, flexShrink: 0 }}>
       <defs>
         <pattern id={id} patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
-          <line x1="0" y1="0" x2="0" y2="8" stroke="#c9c9c9" strokeWidth="1" strokeDasharray="3 3" />
+          <line x1="0" y1="0" x2="0" y2="8" stroke="#D8D3C7" strokeWidth="1" strokeDasharray="3 3" />
         </pattern>
       </defs>
       <rect width={size} height={size} fill={`url(#${id})`} rx="8" />
       {label && (
-        <text x={size/2} y={size/2 + 3} textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="9" fill="#9a9a9a" letterSpacing="0.5">{label}</text>
+        <text x={size/2} y={size/2 + 3} textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="9" fill="#8A8378" letterSpacing="0.5">{label}</text>
       )}
     </svg>
   );
@@ -188,8 +256,8 @@ function UploadScreen({ onAnalyze }) {
 
       {/* Title */}
       <div style={{ padding: '12px 20px 20px' }}>
-        <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.6px', color: '#1a1a1a' }}>New batch</div>
-        <div style={{ fontSize: 14, color: '#6b6b6b', marginTop: 6 }}>Add up to 5 photos. We'll handle the rest.</div>
+        <div style={{ fontFamily: "'Archivo Condensed', sans-serif", fontWeight: 700, fontSize: 30, letterSpacing: '0.2px', color: COLORS.ink }}>New batch</div>
+        <div style={{ fontSize: 14, color: COLORS.graphite, marginTop: 6 }}>Add up to 5 photos. We'll handle the rest.</div>
       </div>
 
       {/* Upload zone */}
@@ -207,8 +275,8 @@ function UploadScreen({ onAnalyze }) {
             width: '100%',
             paddingTop: '100%',
             borderRadius: 14,
-            border: '1.5px dashed #c9c9c9',
-            background: 'repeating-linear-gradient(135deg, transparent 0 10px, rgba(0,0,0,0.02) 10px 11px)',
+            border: '1.5px dashed #C9C2B2',
+            background: 'repeating-linear-gradient(135deg, transparent 0 10px, rgba(28,26,23,0.03) 10px 11px)',
             cursor: 'pointer',
             overflow: 'hidden',
           }}
@@ -218,15 +286,15 @@ function UploadScreen({ onAnalyze }) {
               <>
                 <div style={{
                   width: 52, height: 52, borderRadius: '50%', background: '#ffffff',
-                  border: '1px solid #e7e7e7', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  border: '1px solid #E4DFD3', display: 'flex', alignItems: 'center', justifyContent: 'center'
                 }}>
                   <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                    <path d="M11 14V4M11 4L7 8M11 4L15 8" stroke="#1a1a1a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                    <path d="M4 16v1a2 2 0 002 2h10a2 2 0 002-2v-1" stroke="#6b6b6b" strokeWidth="1.6" strokeLinecap="round"/>
+                    <path d="M11 14V4M11 4L7 8M11 4L15 8" stroke={COLORS.ink} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M4 16v1a2 2 0 002 2h10a2 2 0 002-2v-1" stroke={COLORS.graphite} strokeWidth="1.6" strokeLinecap="round"/>
                   </svg>
                 </div>
-                <div style={{ fontSize: 15, fontWeight: 500, color: '#1a1a1a', marginTop: 14 }}>Tap to upload photo</div>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9a9a9a', marginTop: 4 }}>JPG · PNG · HEIC</div>
+                <div style={{ fontSize: 15, fontWeight: 500, color: COLORS.ink, marginTop: 14 }}>Tap to upload photo</div>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: COLORS.graphite, marginTop: 4 }}>JPG · PNG · HEIC</div>
               </>
             ) : (
               <div style={{
@@ -263,15 +331,15 @@ function UploadScreen({ onAnalyze }) {
                     style={{
                       position: 'relative',
                       paddingTop: '100%',
-                      background: '#f5f5f5',
-                      border: '1.5px dashed #c9c9c9',
+                      background: '#F2F0EB',
+                      border: '1.5px dashed #C9C2B2',
                       borderRadius: 10,
                       cursor: 'pointer',
                     }}
                   >
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                      <span style={{ fontSize: 22, color: '#9a9a9a', lineHeight: 1 }}>+</span>
-                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: '#9a9a9a' }}>add</span>
+                      <span style={{ fontSize: 22, color: COLORS.graphite, lineHeight: 1 }}>+</span>
+                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: COLORS.graphite }}>add</span>
                     </div>
                   </div>
                 )}
@@ -284,7 +352,7 @@ function UploadScreen({ onAnalyze }) {
       {/* Counter */}
       {hasFiles && (
         <div style={{ marginTop: 12, marginLeft: 20, marginRight: 20 }}>
-          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9a9a9a' }}>
+          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: COLORS.graphite }}>
             {files.length} of 5 photos added
           </span>
         </div>
@@ -293,14 +361,14 @@ function UploadScreen({ onAnalyze }) {
       <div style={{ flex: 1 }} />
 
       {/* Bottom dock */}
-      <div style={{ padding: '12px 20px 48px', borderTop: '1px solid #f0f0f0' }}>
+      <div style={{ padding: '12px 20px 48px', borderTop: '1px solid #E4DFD3' }}>
         <button
           onClick={() => hasFiles && onAnalyze(files)}
           disabled={!hasFiles}
           style={{
             width: '100%', height: 52, borderRadius: 12, border: 'none',
-            background: hasFiles ? '#1a1a1a' : '#ececec',
-            color: hasFiles ? '#ffffff' : '#9a9a9a',
+            background: hasFiles ? COLORS.ink : '#E4DFD3',
+            color: hasFiles ? COLORS.manila : COLORS.graphite,
             fontSize: 15, fontWeight: 600, cursor: hasFiles ? 'pointer' : 'not-allowed',
             fontFamily: 'Inter, sans-serif', letterSpacing: '-0.2px',
             transition: 'background 0.2s, color 0.2s',
@@ -387,8 +455,8 @@ function ProcessingScreen({ files, onDone }) {
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
         <TopBar />
         <div style={{ padding: '12px 20px 20px' }}>
-          <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.6px', color: '#1a1a1a' }}>Something went wrong</div>
-          <div style={{ fontSize: 14, color: '#dc2626', marginTop: 6, fontFamily: 'JetBrains Mono, monospace' }}>{error}</div>
+          <div style={{ fontFamily: "'Archivo Condensed', sans-serif", fontWeight: 700, fontSize: 30, letterSpacing: '0.2px', color: COLORS.ink }}>Something went wrong</div>
+          <div style={{ fontSize: 14, color: COLORS.tagRed, marginTop: 6, fontFamily: 'JetBrains Mono, monospace' }}>{error}</div>
         </div>
       </div>
     );
@@ -398,15 +466,15 @@ function ProcessingScreen({ files, onDone }) {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <TopBar />
       <div style={{ padding: '12px 20px 20px' }}>
-        <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.6px', color: '#1a1a1a' }}>
+        <div style={{ fontFamily: "'Archivo Condensed', sans-serif", fontWeight: 700, fontSize: 30, letterSpacing: '0.2px', color: COLORS.ink }}>
           {phase === 'uploading' ? 'Uploading photos…' : 'Analyzing your items…'}
         </div>
-        <div style={{ fontSize: 14, color: '#6b6b6b', marginTop: 6 }}>Usually takes 10–20 seconds</div>
+        <div style={{ fontSize: 14, color: COLORS.graphite, marginTop: 6 }}>Usually takes 10–20 seconds</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, paddingBottom: 80 }}>
         <div style={{
           width: 40, height: 40, borderRadius: '50%',
-          border: '3px solid #e7e7e7', borderTopColor: '#4f6ef7',
+          border: '3px solid #E4DFD3', borderTopColor: COLORS.tagRed,
           animation: 'flipr-spin 0.8s linear infinite',
         }} />
       </div>
@@ -417,7 +485,7 @@ function ProcessingScreen({ files, onDone }) {
 /* ══════════════════════════════════════════
    SCREEN 3: RESULTS
 ══════════════════════════════════════════ */
-function ResultsScreen({ jobId, jobData, previewUrls, onReset }) {
+function ResultsScreen({ jobId, jobData, previewUrls, onNewBatch, onBackHome }) {
   const listings = jobData.items.map((item, index) => ({
     itemIndex: index,
     jobId: item.job_id,
@@ -433,8 +501,8 @@ function ResultsScreen({ jobId, jobData, previewUrls, onReset }) {
       <TopBar />
 
       <div style={{ padding: '12px 20px 20px' }}>
-        <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.6px', color: '#1a1a1a' }}>{listings.length} listings ready</div>
-        <div style={{ fontSize: 14, color: '#6b6b6b', marginTop: 6 }}>Tap copy to use a listing</div>
+        <div style={{ fontFamily: "'Archivo Condensed', sans-serif", fontWeight: 700, fontSize: 30, letterSpacing: '0.2px', color: COLORS.ink }}>{listings.length} listings ready</div>
+        <div style={{ fontSize: 14, color: COLORS.graphite, marginTop: 6 }}>Tap copy to use a listing</div>
       </div>
 
       {/* Scrollable listing cards */}
@@ -445,16 +513,26 @@ function ResultsScreen({ jobId, jobData, previewUrls, onReset }) {
       </div>
 
       {/* Bottom dock */}
-      <div style={{ padding: '12px 20px 48px', borderTop: '1px solid #f0f0f0', flexShrink: 0 }}>
+      <div style={{ padding: '12px 20px 48px', borderTop: '1px solid #E4DFD3', flexShrink: 0, display: 'flex', gap: 10 }}>
         <button
-          onClick={onReset}
+          onClick={onBackHome}
           style={{
-            width: '100%', height: 44, borderRadius: 10, border: '1px solid #d4d4d4',
-            background: '#ffffff', color: '#1a1a1a',
+            flex: 1, height: 44, borderRadius: 10, border: `1px solid ${COLORS.ink}33`,
+            background: '#ffffff', color: COLORS.ink,
             fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
           }}
         >
-          ← Start new batch
+          ← Home
+        </button>
+        <button
+          onClick={onNewBatch}
+          style={{
+            flex: 1, height: 44, borderRadius: 10, border: 'none',
+            background: COLORS.ink, color: COLORS.manila,
+            fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+          }}
+        >
+          New batch →
         </button>
       </div>
     </div>
@@ -467,7 +545,7 @@ function FieldLabel({ children }) {
     <div style={{
       fontFamily: 'JetBrains Mono, monospace', fontSize: 11,
       textTransform: 'uppercase', letterSpacing: '0.8px',
-      color: '#6b6b6b', marginBottom: 5,
+      color: COLORS.graphite, marginBottom: 5,
     }}>{children}</div>
   );
 }
@@ -476,7 +554,7 @@ function FieldRow({ label, value }) {
   return (
     <div style={{ marginBottom: 14 }}>
       <FieldLabel>{label}</FieldLabel>
-      <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a', display: 'flex', alignItems: 'center' }}>
+      <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.ink, display: 'flex', alignItems: 'center' }}>
         <span>{value}</span>
         <CopyField value={value} />
       </div>
@@ -485,7 +563,7 @@ function FieldRow({ label, value }) {
 }
 
 /* ─── Pricing explainability ─── */
-function PricingExplain({ comps, price }) {
+function PricingExplain({ comps, price, platform }) {
   const [open, setOpen] = useState(false);
   if (!comps) return null;
   const sample = comps.sample_size;
@@ -754,10 +832,185 @@ function ListingCard({ listing, jobId, itemIndex }) {
 }
 
 /* ══════════════════════════════════════════
+   SCREEN 0: HOME
+══════════════════════════════════════════ */
+function HomeScreen({ onStartBatch, onViewHistory }) {
+  const hasHistory = getJobHistory().length > 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      {/* Header */}
+      <div style={{ paddingTop: 56, paddingLeft: 20, paddingRight: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontFamily: "'Archivo Condensed', sans-serif", fontWeight: 700, fontSize: 22, letterSpacing: '0.5px', color: COLORS.ink, textTransform: 'uppercase' }}>
+          Flipr<span style={{ color: COLORS.tagRed }}>.</span>
+        </span>
+        <div style={{
+          width: 32, height: 32, borderRadius: '50%', background: COLORS.ink,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: COLORS.manila, letterSpacing: '0.4px'
+        }}>JD</div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 20px 20px' }}>
+        {/* Featured example card — real pipeline output, perforated top edge */}
+        <div className="tag-notch" style={{
+          background: '#ffffff', borderRadius: 14, border: `1px solid ${COLORS.ink}1a`,
+          padding: '22px 18px 18px', marginBottom: 28,
+        }}>
+          <div className="label" style={{ marginBottom: 12 }}>Example result</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+            <div style={{ width: 50, height: 50, borderRadius: 8, flexShrink: 0, background: '#5B6B8C' }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: COLORS.ink }}>Wrangler denim shirt</div>
+              <div style={{ fontSize: 13, color: COLORS.graphite, marginTop: 2 }}>Snap-front · Men's L</div>
+            </div>
+            <div className="mono" style={{ fontSize: 20, fontWeight: 700, color: COLORS.tagRed, flexShrink: 0 }}>$28.00</div>
+          </div>
+          <div style={{ display: 'flex', gap: 18, borderTop: '1px solid #E4DFD3', paddingTop: 12 }}>
+            <div>
+              <div className="mono" style={{ fontSize: 15, color: COLORS.ink, fontWeight: 600 }}>50</div>
+              <div className="label">sold comps</div>
+            </div>
+            <div>
+              <div className="mono" style={{ fontSize: 15, color: COLORS.ink, fontWeight: 600 }}>8.4s</div>
+              <div className="label">photo to listing</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Headline */}
+        <div style={{
+          fontFamily: "'Archivo Condensed', sans-serif", fontWeight: 700,
+          fontSize: 34, lineHeight: 1.05, color: COLORS.ink, marginBottom: 10,
+        }}>
+          Photograph it.<br />Price it.<br />List it.
+        </div>
+        <div style={{ fontSize: 14, color: COLORS.graphite, lineHeight: 1.5, marginBottom: 24 }}>
+          Upload a few photos. Get eBay and Poshmark listings priced from real sold comps.
+        </div>
+
+        {/* Metrics row — real pipeline figures, not testimonials */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+          {[
+            ['50', 'sold comps / item'],
+            ['~8s', 'photo to listing'],
+            ['1.0', 'quality score'],
+          ].map(([value, label]) => (
+            <div key={label}>
+              <div className="mono" style={{ fontSize: 18, fontWeight: 600, color: COLORS.ink }}>{value}</div>
+              <div className="label" style={{ marginTop: 2 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+        <div className="label">from an example run, not live-averaged</div>
+      </div>
+
+      {/* Bottom dock */}
+      <div style={{ padding: '12px 20px 48px', flexShrink: 0 }}>
+        <button
+          onClick={onStartBatch}
+          style={{
+            width: '100%', height: 52, borderRadius: 12, border: 'none',
+            background: COLORS.ink, color: COLORS.manila,
+            fontSize: 15, fontWeight: 600, cursor: 'pointer',
+            fontFamily: 'Inter, sans-serif', letterSpacing: '-0.2px', marginBottom: hasHistory ? 10 : 0,
+          }}
+        >
+          Start a batch →
+        </button>
+        {hasHistory && (
+          <button
+            onClick={onViewHistory}
+            style={{
+              width: '100%', height: 40, borderRadius: 10, border: 'none',
+              background: 'transparent', color: COLORS.tagRed,
+              fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+            }}
+          >
+            View history
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   SCREEN: HISTORY
+══════════════════════════════════════════ */
+function HistoryScreen({ onSelect, onStartBatch, onBack }) {
+  const history = [...getJobHistory()].reverse(); // newest first
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <div style={{ paddingTop: 56, paddingLeft: 20, paddingRight: 20 }}>
+        <button onClick={onBack} style={{
+          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+          fontSize: 14, color: COLORS.ink, fontFamily: 'Inter, sans-serif', fontWeight: 500,
+        }}>← Home</button>
+      </div>
+
+      <div style={{ padding: '12px 20px 20px' }}>
+        <div style={{ fontFamily: "'Archivo Condensed', sans-serif", fontWeight: 700, fontSize: 30, letterSpacing: '0.2px', color: COLORS.ink }}>History</div>
+        <div style={{ fontSize: 14, color: COLORS.graphite, marginTop: 6 }}>{history.length} past {history.length === 1 ? 'batch' : 'batches'}</div>
+      </div>
+
+      {history.length === 0 ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 32px', textAlign: 'center' }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: COLORS.ink, marginBottom: 6 }}>Nothing here yet</div>
+          <div style={{ fontSize: 14, color: COLORS.graphite, marginBottom: 20, lineHeight: 1.5 }}>Run a batch and it'll show up here.</div>
+          <button
+            onClick={onStartBatch}
+            style={{
+              height: 44, padding: '0 20px', borderRadius: 10, border: 'none',
+              background: COLORS.ink, color: COLORS.manila, fontSize: 14, fontWeight: 600,
+              cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+            }}
+          >Start a batch →</button>
+        </div>
+      ) : (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {history.map(entry => {
+            const range = getPriceRange(entry.items);
+            return (
+              <div
+                key={entry.jobId + entry.timestamp}
+                onClick={() => onSelect(entry)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                  background: '#ffffff', borderRadius: 12, border: `1px solid ${COLORS.ink}1a`, padding: 12,
+                }}
+              >
+                {entry.previewUrls?.[0] ? (
+                  <img src={entry.previewUrls[0]} alt="" style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
+                ) : (
+                  <HatchBox size={48} label="" />
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.ink }}>
+                    {entry.items.length} {entry.items.length === 1 ? 'item' : 'items'}
+                  </div>
+                  <div className="label" style={{ marginTop: 2 }}>{formatRelativeTime(entry.timestamp)}</div>
+                </div>
+                {range && (
+                  <div className="mono" style={{ fontSize: 13, fontWeight: 600, color: COLORS.tagRed, flexShrink: 0 }}>
+                    {range.low === range.high ? `$${range.low.toFixed(2)}` : `$${range.low.toFixed(0)}–${range.high.toFixed(0)}`}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
    ROOT APP
 ══════════════════════════════════════════ */
 function App() {
-  const [screen, setScreen] = useState('upload');
+  const [screen, setScreen] = useState('home');
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [previewUrls, setPreviewUrls] = useState([]);
   const [jobId, setJobId] = useState('');
@@ -772,11 +1025,25 @@ function App() {
   function handleDone(id, data) {
     setJobId(id);
     setJobData(data);
+    // previewUrls are blob: URLs tied to this session — not revoked below so
+    // History thumbnails for this batch stay valid until the tab closes.
+    saveJobToHistory({
+      jobId: id,
+      timestamp: Date.now(),
+      previewUrls: previewUrls,
+      items: data.items,
+    });
     setScreen('results');
   }
 
-  function handleReset() {
-    previewUrls.forEach(url => URL.revokeObjectURL(url));
+  function handleSelectHistoryEntry(entry) {
+    setJobId(entry.jobId);
+    setJobData({ status: 'completed', items: entry.items });
+    setPreviewUrls(entry.previewUrls);
+    setScreen('results');
+  }
+
+  function handleNewBatch() {
     setSelectedFiles([]);
     setPreviewUrls([]);
     setJobId('');
@@ -786,9 +1053,13 @@ function App() {
 
   return (
     <>
+      {screen === 'home' && <HomeScreen onStartBatch={() => setScreen('upload')} onViewHistory={() => setScreen('history')} />}
       {screen === 'upload' && <UploadScreen onAnalyze={handleAnalyze} />}
       {screen === 'processing' && <ProcessingScreen files={selectedFiles} onDone={handleDone} />}
-      {screen === 'results' && jobData && <ResultsScreen jobId={jobId} jobData={jobData} previewUrls={previewUrls} onReset={handleReset} />}
+      {screen === 'results' && jobData && (
+        <ResultsScreen jobId={jobId} jobData={jobData} previewUrls={previewUrls} onNewBatch={handleNewBatch} onBackHome={() => setScreen('home')} />
+      )}
+      {screen === 'history' && <HistoryScreen onSelect={handleSelectHistoryEntry} onStartBatch={() => setScreen('upload')} onBack={() => setScreen('home')} />}
     </>
   );
 }

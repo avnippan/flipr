@@ -571,21 +571,25 @@ function PricingExplain({ comps, price, platform }) {
   const low = comps.low_price;
   const high = comps.high_price;
   const rawComps = comps.raw_comps || [];
+  const isAboveMedian = sample > 0 && Number(price) > Number(median);
+  const platformLabel = platform === 'poshmark' ? 'Poshmark' : 'eBay';
 
   return (
-    <div style={{ marginBottom: 14, background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 8, padding: '10px 12px' }}>
+    <div style={{ marginBottom: 14, background: '#F2F0EB', border: '1px solid #E4DFD3', borderRadius: 8, padding: '10px 12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <FieldLabel>Why this price</FieldLabel>
         {rawComps.length > 0 && (
           <button
             onClick={() => setOpen(o => !o)}
-            style={{ background: 'none', border: 'none', color: '#4f6ef7', fontSize: 12, cursor: 'pointer', fontFamily: 'Inter, sans-serif', padding: 0 }}
+            style={{ background: 'none', border: 'none', color: COLORS.tagRed, fontSize: 12, cursor: 'pointer', fontFamily: 'Inter, sans-serif', padding: 0 }}
           >{open ? 'Hide comps ↑' : `See ${Math.min(rawComps.length, 10)} comps →`}</button>
         )}
       </div>
-      <div style={{ fontSize: 13, color: '#1a1a1a', lineHeight: 1.5, marginTop: 4 }}>
+      <div style={{ fontSize: 13, color: COLORS.ink, lineHeight: 1.5, marginTop: 4 }}>
         {sample ? (
-          <>Priced from <strong>{sample} sold {sample === 1 ? 'listing' : 'listings'}</strong> (range ${Number(low).toFixed(2)}–${Number(high).toFixed(2)}, median ${Number(median).toFixed(2)}). Listed at <strong>${Number(price).toFixed(2)}</strong> — slightly under median to sell faster.</>
+          <>Priced from <strong>{sample} sold {sample === 1 ? 'listing' : 'listings'}</strong> (range ${Number(low).toFixed(2)}–${Number(high).toFixed(2)}, median ${Number(median).toFixed(2)}). Listed at <strong>${Number(price).toFixed(2)}</strong> — {isAboveMedian
+            ? `above median, reflecting ${platformLabel}'s typical listing/negotiation norms.`
+            : 'slightly under median to sell faster.'}</>
         ) : (
           <>No comparable sold listings found — price is an estimate.</>
         )}
@@ -593,9 +597,9 @@ function PricingExplain({ comps, price, platform }) {
       {open && rawComps.length > 0 && (
         <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {rawComps.slice(0, 10).map((c, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: '#6b6b6b' }}>
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: COLORS.graphite }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{c.title || 'Sold item'}</span>
-              <span style={{ color: '#1a1a1a', flexShrink: 0, marginLeft: 8 }}>${Number(c.sold_price || 0).toFixed(2)}</span>
+              <span style={{ color: COLORS.ink, flexShrink: 0, marginLeft: 8 }}>${Number(c.sold_price || 0).toFixed(2)}</span>
             </div>
           ))}
         </div>
@@ -604,26 +608,50 @@ function PricingExplain({ comps, price, platform }) {
   );
 }
 
-function PoshmarkContent({ pm, price, comps, expanded, setExpanded }) {
-  const earnings = (price * 0.80).toFixed(2);
+function PoshmarkContent({ pm, fields, setFields, cardState, comps, expanded, setExpanded, inputStyle, monoInputStyle }) {
+  const editing = cardState === 'editing';
+  const poshPrice = fields.poshmark.price;
+  const earnings = (poshPrice >= 15 ? poshPrice * 0.80 : poshPrice - 2.95).toFixed(2);
   return (
     <>
-      <FieldRow label="Title" value={pm.title || '—'} />
+      {editing ? (
+        <div style={{ marginBottom: 14 }}>
+          <FieldLabel>Title</FieldLabel>
+          <input
+            value={fields.poshmark.title}
+            onChange={e => setFields(f => ({ ...f, poshmark: { ...f.poshmark, title: e.target.value } }))}
+            style={inputStyle}
+          />
+        </div>
+      ) : (
+        <FieldRow label="Title" value={fields.poshmark.title || '—'} />
+      )}
 
       <div style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <FieldLabel>Description</FieldLabel>
-          <CopyField value={pm.description} />
+          {!editing && <CopyField value={fields.poshmark.description} />}
         </div>
-        <div style={{
-          fontSize: 13, color: '#6b6b6b', lineHeight: 1.5,
-          display: '-webkit-box', WebkitBoxOrient: 'vertical',
-          WebkitLineClamp: expanded ? 'unset' : 2, overflow: 'hidden',
-        }}>{pm.description || ''}</div>
-        <button onClick={() => setExpanded(e => !e)} style={{
-          background: 'none', border: 'none', color: '#4f6ef7', fontSize: 13,
-          cursor: 'pointer', marginTop: 4, padding: 0, fontFamily: 'Inter, sans-serif',
-        }}>{expanded ? 'Show less ↑' : 'Show more →'}</button>
+        {editing ? (
+          <textarea
+            value={fields.poshmark.description}
+            onChange={e => setFields(f => ({ ...f, poshmark: { ...f.poshmark, description: e.target.value } }))}
+            rows={4}
+            style={{ ...inputStyle, resize: 'vertical' }}
+          />
+        ) : (
+          <>
+            <div style={{
+              fontSize: 13, color: COLORS.graphite, lineHeight: 1.5,
+              display: '-webkit-box', WebkitBoxOrient: 'vertical',
+              WebkitLineClamp: expanded ? 'unset' : 2, overflow: 'hidden',
+            }}>{fields.poshmark.description || ''}</div>
+            <button onClick={() => setExpanded(e => !e)} style={{
+              background: 'none', border: 'none', color: COLORS.tagRed, fontSize: 13,
+              cursor: 'pointer', marginTop: 4, padding: 0, fontFamily: 'Inter, sans-serif',
+            }}>{expanded ? 'Show less ↑' : 'Show more →'}</button>
+          </>
+        )}
       </div>
 
       {pm.category && <FieldRow label="Category" value={pm.category} />}
@@ -632,13 +660,13 @@ function PoshmarkContent({ pm, price, comps, expanded, setExpanded }) {
       {pm.brand && <FieldRow label="Brand" value={pm.brand} />}
       {pm.color && <FieldRow label="Color" value={pm.color} />}
 
-      {pm.style_tags?.length > 0 && (
+      {pm.hashtags?.length > 0 && (
         <div style={{ marginBottom: 14 }}>
-          <FieldLabel>Style Tags</FieldLabel>
+          <FieldLabel>Hashtags</FieldLabel>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {pm.style_tags.map(tag => (
+            {pm.hashtags.map(tag => (
               <span key={tag} style={{
-                background: '#eff3ff', color: '#4f6ef7',
+                background: '#F5E6E4', color: COLORS.tagRed,
                 fontSize: 12, padding: '3px 8px', borderRadius: 6,
                 fontFamily: 'JetBrains Mono, monospace',
               }}>{tag}</span>
@@ -647,37 +675,67 @@ function PoshmarkContent({ pm, price, comps, expanded, setExpanded }) {
         </div>
       )}
 
-      <PricingExplain comps={comps} price={price} />
+      <PricingExplain comps={comps} price={poshPrice} platform="poshmark" />
+
+      {!editing && (
+        <div style={{ marginBottom: 14, background: '#F2F0EB', border: '1px solid #E4DFD3', borderRadius: 8, padding: '10px 12px' }}>
+          <FieldLabel>Why Poshmark is priced higher</FieldLabel>
+          <div style={{ fontSize: 13, color: COLORS.ink, lineHeight: 1.5, marginTop: 4 }}>
+            Estimated 10% above eBay comp price — Poshmark buyers often negotiate.
+          </div>
+        </div>
+      )}
 
       <div>
         <FieldLabel>Price &amp; Earnings</FieldLabel>
-        <div style={{ fontSize: 13, color: '#6b6b6b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span>Listing Price: <strong style={{ color: '#1a1a1a' }}>${price.toFixed(2)}</strong></span>
-          <CopyField value={price.toFixed(2)} />
-          <span style={{ color: '#c9c9c9' }}>→</span>
-          <span>Your Earnings: <strong style={{ color: '#4f6ef7' }}>${earnings}</strong></span>
-        </div>
+        {editing ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, color: COLORS.graphite }}>Listing Price: $</span>
+            <input
+              type="number" step="0.01"
+              value={fields.poshmark.price}
+              onChange={e => setFields(f => ({ ...f, poshmark: { ...f.poshmark, price: Number(e.target.value) || 0 } }))}
+              style={{ ...monoInputStyle, width: 90 }}
+            />
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: COLORS.graphite, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span>Listing Price: <strong style={{ color: COLORS.ink }}>${poshPrice.toFixed(2)}</strong></span>
+            <CopyField value={poshPrice.toFixed(2)} />
+            <span style={{ color: '#C9C2B2' }}>→</span>
+            <span>Your Earnings: <strong style={{ color: COLORS.receiptGreen }}>${earnings}</strong></span>
+          </div>
+        )}
       </div>
     </>
   );
 }
 
-function EbayContent({ eb, price, comps, expanded, setExpanded }) {
-  const title = eb.title || '';
-  const charCount = title.length;
-  const specs = eb.item_specifics || {};
-  const hasSpecs = Object.keys(specs).length > 0;
+function EbayContent({ eb, fields, setFields, cardState, comps, expanded, setExpanded, inputStyle, monoInputStyle }) {
+  const editing = cardState === 'editing';
+  const charCount = fields.ebay.title.length;
+  const hasSpecs = Object.keys(fields.ebay.specifics).length > 0;
+  const ebPrice = fields.ebay.price;
+  const ebEarnings = (ebPrice - (ebPrice * 0.1325) - 0.30).toFixed(2);
   return (
     <>
       <div style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <FieldLabel>Title</FieldLabel>
-          <CopyField value={title} />
+          {!editing && <CopyField value={fields.ebay.title} />}
         </div>
-        <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a' }}>{title}</div>
+        {editing ? (
+          <input
+            value={fields.ebay.title}
+            onChange={e => setFields(f => ({ ...f, ebay: { ...f.ebay, title: e.target.value } }))}
+            style={inputStyle}
+          />
+        ) : (
+          <div style={{ fontSize: 14, fontWeight: 500, color: COLORS.ink }}>{fields.ebay.title}</div>
+        )}
         <div style={{
           fontFamily: 'JetBrains Mono, monospace', fontSize: 10, marginTop: 3,
-          color: charCount > 70 ? '#c0392b' : '#9a9a9a',
+          color: charCount > 70 ? COLORS.tagRed : COLORS.graphite,
         }}>{charCount}/80 characters</div>
       </div>
 
@@ -689,16 +747,24 @@ function EbayContent({ eb, price, comps, expanded, setExpanded }) {
           <FieldLabel>Item Specifics</FieldLabel>
           <div style={{
             display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px 12px',
-            background: '#fafafa', borderRadius: 8, padding: '10px 12px',
-            border: '1px solid #f0f0f0',
+            background: '#F2F0EB', borderRadius: 8, padding: '10px 12px',
+            border: '1px solid #E4DFD3',
           }}>
-            {Object.entries(specs).map(([k, v]) => (
+            {Object.entries(fields.ebay.specifics).map(([k, v]) => (
               <React.Fragment key={k}>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#9a9a9a' }}>{k}</div>
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a', display: 'flex', alignItems: 'center' }}>
-                  <span>{v}</span>
-                  <CopyField value={v} />
-                </div>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: COLORS.graphite }}>{k}</div>
+                {editing ? (
+                  <input
+                    value={v}
+                    onChange={e => setFields(f => ({ ...f, ebay: { ...f.ebay, specifics: { ...f.ebay.specifics, [k]: e.target.value } } }))}
+                    style={{ ...inputStyle, padding: '3px 6px', fontSize: 13 }}
+                  />
+                ) : (
+                  <div style={{ fontSize: 13, fontWeight: 500, color: COLORS.ink, display: 'flex', alignItems: 'center' }}>
+                    <span>{v}</span>
+                    <CopyField value={v} />
+                  </div>
+                )}
               </React.Fragment>
             ))}
           </div>
@@ -708,27 +774,52 @@ function EbayContent({ eb, price, comps, expanded, setExpanded }) {
       <div style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <FieldLabel>Description</FieldLabel>
-          <CopyField value={eb.description} />
+          {!editing && <CopyField value={fields.ebay.description} />}
         </div>
-        <div style={{
-          fontSize: 13, color: '#6b6b6b', lineHeight: 1.5,
-          display: '-webkit-box', WebkitBoxOrient: 'vertical',
-          WebkitLineClamp: expanded ? 'unset' : 2, overflow: 'hidden',
-        }}>{eb.description || ''}</div>
-        <button onClick={() => setExpanded(e => !e)} style={{
-          background: 'none', border: 'none', color: '#4f6ef7', fontSize: 13,
-          cursor: 'pointer', marginTop: 4, padding: 0, fontFamily: 'Inter, sans-serif',
-        }}>{expanded ? 'Show less ↑' : 'Show more →'}</button>
+        {editing ? (
+          <textarea
+            value={fields.ebay.description}
+            onChange={e => setFields(f => ({ ...f, ebay: { ...f.ebay, description: e.target.value } }))}
+            rows={4}
+            style={{ ...inputStyle, resize: 'vertical' }}
+          />
+        ) : (
+          <>
+            <div style={{
+              fontSize: 13, color: COLORS.graphite, lineHeight: 1.5,
+              display: '-webkit-box', WebkitBoxOrient: 'vertical',
+              WebkitLineClamp: expanded ? 'unset' : 2, overflow: 'hidden',
+            }}>{fields.ebay.description || ''}</div>
+            <button onClick={() => setExpanded(e => !e)} style={{
+              background: 'none', border: 'none', color: COLORS.tagRed, fontSize: 13,
+              cursor: 'pointer', marginTop: 4, padding: 0, fontFamily: 'Inter, sans-serif',
+            }}>{expanded ? 'Show less ↑' : 'Show more →'}</button>
+          </>
+        )}
       </div>
 
-      <PricingExplain comps={comps} price={price} />
+      <PricingExplain comps={comps} price={ebPrice} platform="ebay" />
 
       <div>
         <FieldLabel>Format &amp; Price</FieldLabel>
-        <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1a1a', display: 'flex', alignItems: 'center' }}>
-          <span>Buy It Now · <span style={{ color: '#4f6ef7' }}>${price.toFixed(2)}</span></span>
-          <CopyField value={price.toFixed(2)} />
-        </div>
+        {editing ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 14, color: COLORS.ink }}>Buy It Now · $</span>
+            <input
+              type="number" step="0.01"
+              value={fields.ebay.price}
+              onChange={e => setFields(f => ({ ...f, ebay: { ...f.ebay, price: Number(e.target.value) || 0 } }))}
+              style={{ ...monoInputStyle, width: 90 }}
+            />
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: COLORS.graphite, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span>Buy It Now: <strong style={{ color: COLORS.ink }}>${ebPrice.toFixed(2)}</strong></span>
+            <CopyField value={ebPrice.toFixed(2)} />
+            <span style={{ color: '#C9C2B2' }}>→</span>
+            <span>Your Earnings: <strong style={{ color: COLORS.receiptGreen }}>${ebEarnings}</strong></span>
+          </div>
+        )}
       </div>
     </>
   );
@@ -737,15 +828,49 @@ function EbayContent({ eb, price, comps, expanded, setExpanded }) {
 function ListingCard({ listing, jobId, itemIndex }) {
   const [platform, setPlatform] = useState('ebay');
   const [expanded, setExpanded] = useState(false);
-  const [ebayPost, setEbayPost] = useState({ status: 'idle', listingUrl: null, error: null });
+  const [cardState, setCardState] = useState('view'); // 'view' | 'editing' | 'confirmed'
 
   const pm = listing.poshmark || {};
   const eb = listing.ebay || {};
   const meta = listing.metadata || {};
-  const price = Number(listing.comps?.suggested_price || pm.price || eb.price || 0);
 
-  const title = eb.title || pm.title || 'Item';
+  // Local, per-card copy of the editable fields — seeded once from the
+  // pipeline output, then mutated only by this card's own inputs. Price is
+  // per-platform: Poshmark is seeded 10% above the eBay comp price as a
+  // disclosed heuristic (Poshmark buyers commonly negotiate/make offers),
+  // not scraped Poshmark data.
+  const [fields, setFields] = useState(() => {
+    const basePrice = Number(listing.comps?.suggested_price || pm.price || eb.price || 0);
+    return {
+      ebay: {
+        price: basePrice,
+        title: eb.title || '',
+        description: eb.description || '',
+        specifics: { ...(eb.item_specifics || {}) },
+      },
+      poshmark: {
+        price: Math.round(basePrice * 1.10 * 100) / 100,
+        title: pm.title || '',
+        description: pm.description || '',
+      },
+    };
+  });
+
+  const title = fields.ebay.title || fields.poshmark.title || 'Item';
   const condition = meta.condition || pm.condition || '—';
+  const headerPrice = platform === 'poshmark' ? fields.poshmark.price : fields.ebay.price;
+
+  const inputStyle = {
+    width: '100%', border: `1px solid ${COLORS.ink}33`, borderRadius: 6,
+    padding: '6px 8px', fontSize: 14, color: COLORS.ink,
+    fontFamily: 'Inter, sans-serif', background: '#ffffff',
+  };
+  const monoInputStyle = { ...inputStyle, fontFamily: 'JetBrains Mono, monospace' };
+
+  function toggleEdit() {
+    // view -> editing, editing -> view, confirmed -> editing
+    setCardState(s => (s === 'editing' ? 'view' : 'editing'));
+  }
 
   // No "copy full listing" blob — Poshmark and eBay's own forms use separate
   // fields (title, category, condition, description, price, etc.), so every
@@ -757,38 +882,48 @@ function ListingCard({ listing, jobId, itemIndex }) {
   // exercised separately, outside this demo.
 
   return (
-    <div style={{ borderRadius: 14, border: '1px solid #e7e7e7', background: '#ffffff', overflow: 'hidden' }}>
+    <div className="tag-notch" style={{ borderRadius: 14, border: `1px solid ${COLORS.ink}1a`, background: '#ffffff', overflow: 'hidden' }}>
 
       {/* Header */}
-      <div style={{ padding: 16, borderBottom: '1px solid #e7e7e7', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ padding: '20px 16px 16px', borderBottom: '1px solid #E4DFD3', display: 'flex', alignItems: 'center', gap: 12 }}>
         {listing.imageUrl ? (
           <img src={listing.imageUrl} alt="" style={{ width: 50, height: 50, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
         ) : (
           <HatchBox size={50} label="" />
         )}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.ink, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
             fontFamily: 'JetBrains Mono, monospace', fontSize: 10,
             letterSpacing: '0.5px',
-            padding: '4px 8px', borderRadius: 999, border: '1px solid #e7e7e7',
-            color: '#6b6b6b',
-          }}><span style={{ textTransform: 'uppercase', color: '#9a9a9a' }}>Condition:</span> <span style={{ textTransform: 'capitalize' }}>{condition}</span></div>
+            padding: '4px 8px', borderRadius: 999, border: '1px solid #E4DFD3',
+            color: COLORS.graphite,
+          }}><span style={{ textTransform: 'uppercase', color: COLORS.graphite }}>Condition:</span> <span style={{ textTransform: 'capitalize' }}>{condition}</span></div>
         </div>
-        <div style={{ fontSize: 22, fontWeight: 700, color: '#4f6ef7', flexShrink: 0 }}>${price.toFixed(2)}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+          {cardState === 'confirmed' && (
+            <span style={{
+              fontFamily: 'JetBrains Mono, monospace', fontSize: 9, fontWeight: 600,
+              textTransform: 'uppercase', letterSpacing: '0.5px',
+              color: COLORS.receiptGreen, background: '#E3EBE2',
+              padding: '2px 6px', borderRadius: 999,
+            }}>Reviewed ✓</span>
+          )}
+          <div className="mono" style={{ fontSize: 22, fontWeight: 700, color: COLORS.tagRed }}>${headerPrice.toFixed(2)}</div>
+        </div>
       </div>
 
       {/* Platform toggle */}
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid #e7e7e7', display: 'flex', gap: 8 }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid #E4DFD3', display: 'flex', gap: 8 }}>
         {['ebay', 'poshmark'].map(p => (
           <button
             key={p}
             onClick={() => { setPlatform(p); setExpanded(false); }}
             style={{
               height: 30, padding: '0 14px', borderRadius: 999, border: 'none',
-              background: platform === p ? '#1a1a1a' : '#eff3ff',
-              color: platform === p ? '#ffffff' : '#4f6ef7',
+              background: platform === p ? COLORS.ink : '#F5E6E4',
+              color: platform === p ? COLORS.manila : COLORS.tagRed,
               fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
               transition: 'background 0.15s, color 0.15s',
             }}
@@ -799,31 +934,50 @@ function ListingCard({ listing, jobId, itemIndex }) {
       </div>
 
       {/* Listing content */}
-      <div style={{ padding: 16, borderBottom: '1px solid #e7e7e7' }}>
+      <div style={{ padding: 16, borderBottom: '1px solid #E4DFD3' }}>
         {platform === 'poshmark'
-          ? <PoshmarkContent pm={pm} price={price} comps={listing.comps} expanded={expanded} setExpanded={setExpanded} />
-          : <EbayContent eb={eb} price={price} comps={listing.comps} expanded={expanded} setExpanded={setExpanded} />
+          ? <PoshmarkContent pm={pm} fields={fields} setFields={setFields} cardState={cardState} comps={listing.comps} expanded={expanded} setExpanded={setExpanded} inputStyle={inputStyle} monoInputStyle={monoInputStyle} />
+          : <EbayContent eb={eb} fields={fields} setFields={setFields} cardState={cardState} comps={listing.comps} expanded={expanded} setExpanded={setExpanded} inputStyle={inputStyle} monoInputStyle={monoInputStyle} />
         }
       </div>
 
-      {/* Post to eBay — disabled in public demo (requires admin API key) */}
-      {platform === 'ebay' && (
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid #e7e7e7' }}>
+      {/* Edit / Confirm action bar */}
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid #E4DFD3', display: 'flex', gap: 10 }}>
+        <button
+          onClick={toggleEdit}
+          style={{
+            flex: 1, height: 40, borderRadius: 10, border: `1px solid ${COLORS.ink}33`,
+            background: '#ffffff', color: COLORS.ink,
+            fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+          }}
+        >
+          {cardState === 'editing' ? 'Done' : 'Edit'}
+        </button>
+        {cardState === 'confirmed' ? (
           <button
             disabled
             title="Live posting uses an authenticated admin endpoint, disabled here for public demo safety"
             style={{
-              width: '100%', height: 44, borderRadius: 10, border: 'none',
-              background: '#ececec', color: '#9a9a9a',
+              flex: 1, height: 40, borderRadius: 10, border: 'none',
+              background: '#E4DFD3', color: COLORS.graphite,
               fontSize: 14, fontWeight: 500, cursor: 'not-allowed',
               fontFamily: 'Inter, sans-serif',
             }}
           >Post to eBay (demo mode)</button>
-        </div>
-      )}
+        ) : (
+          <button
+            onClick={() => setCardState('confirmed')}
+            style={{
+              flex: 1, height: 40, borderRadius: 10, border: 'none',
+              background: COLORS.ink, color: COLORS.manila,
+              fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+            }}
+          >Confirm</button>
+        )}
+      </div>
 
       <div style={{ padding: '10px 16px 14px', textAlign: 'center' }}>
-        <span style={{ fontSize: 11, color: '#9a9a9a', fontFamily: 'JetBrains Mono, monospace' }}>
+        <span style={{ fontSize: 11, color: COLORS.graphite, fontFamily: 'JetBrains Mono, monospace' }}>
           Tap the ⧉ icon next to any field to copy it
         </span>
       </div>

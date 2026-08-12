@@ -9,14 +9,13 @@
 ## SSM Parameters (one-time setup)
 
 ```bash
-aws ssm put-parameter --name /flipr/ebay-app-id               --value "YOUR_VALUE" --type SecureString
-aws ssm put-parameter --name /flipr/ebay-cert-id              --value "YOUR_VALUE" --type SecureString
-aws ssm put-parameter --name /flipr/ebay-fulfillment-policy-id --value "YOUR_VALUE" --type SecureString
-aws ssm put-parameter --name /flipr/ebay-payment-policy-id    --value "YOUR_VALUE" --type SecureString
-aws ssm put-parameter --name /flipr/ebay-return-policy-id     --value "YOUR_VALUE" --type SecureString
-aws ssm put-parameter --name /flipr/ebay-merchant-location-key --value "YOUR_VALUE" --type SecureString
-aws ssm put-parameter --name /flipr/openai-api-key            --value "YOUR_VALUE" --type SecureString
-aws ssm put-parameter --name /flipr/api-key                   --value "YOUR_VALUE" --type SecureString
+aws ssm put-parameter --name /flipr/ebay-app-id               --value "YOUR_VALUE" --type String
+aws ssm put-parameter --name /flipr/ebay-cert-id              --value "YOUR_VALUE" --type String
+aws ssm put-parameter --name /flipr/ebay-fulfillment-policy-id --value "YOUR_VALUE" --type String
+aws ssm put-parameter --name /flipr/ebay-payment-policy-id    --value "YOUR_VALUE" --type String
+aws ssm put-parameter --name /flipr/ebay-return-policy-id     --value "YOUR_VALUE" --type String
+aws ssm put-parameter --name /flipr/ebay-merchant-location-key --value "YOUR_VALUE" --type String
+aws ssm put-parameter --name /flipr/api-key                   --value "YOUR_VALUE" --type String
 ```
 
 ## Build and Deploy

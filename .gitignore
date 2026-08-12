@@ -51,3 +51,6 @@ logs/
 test_scrapers.py
 test_*.py
 *_test.py
+
+# Deploy scratch files
+bucket-policy.json

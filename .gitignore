@@ -54,3 +54,6 @@ test_*.py
 
 # Deploy scratch files
 bucket-policy.json
+
+docs/STATUS.md
+docs/ROADMAP.md

@@ -76,6 +76,12 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub flipr-images-${AWS::AccountId}-${Environment}
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireUploadsAfter7Days
+            Status: Enabled
+            Prefix: uploads/
+            ExpirationInDays: 7
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders: ["*"]

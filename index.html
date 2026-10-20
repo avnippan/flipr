@@ -384,7 +384,33 @@ function UploadScreen({ onAnalyze }) {
 /* ══════════════════════════════════════════
    SCREEN 2: PROCESSING
 ══════════════════════════════════════════ */
-function ProcessingScreen({ files, onDone }) {
+const MAX_LONG_EDGE_PX = 2000;
+const MAX_UPLOAD_BYTES = 3 * 1024 * 1024; // under the worker's 3.5 MiB guard
+const UNREADABLE_PHOTO_MSG = "We couldn't read this photo. Try a JPEG, or take a screenshot of it and upload that.";
+
+// Decode, cap the long edge (never upscale), and re-encode as JPEG so Bedrock
+// only ever receives a JPEG under its size limit.
+async function resizeToJpeg(file) {
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch (e) {
+    throw new Error(UNREADABLE_PHOTO_MSG);
+  }
+  const scale = Math.min(1, MAX_LONG_EDGE_PX / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  if (bitmap.close) bitmap.close();
+  for (const quality of [0.85, 0.7, 0.55]) {
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
+    if (blob && blob.size <= MAX_UPLOAD_BYTES) return blob;
+  }
+  throw new Error(UNREADABLE_PHOTO_MSG);
+}
+
+function ProcessingScreen({ files, onDone, onRetry }) {
   const [phase, setPhase] = useState('uploading'); // 'uploading' | 'analyzing'
   const [error, setError] = useState(null);
 
@@ -392,7 +418,9 @@ function ProcessingScreen({ files, onDone }) {
     let cancelled = false;
 
     // Poll a single Lambda job (POST /jobs -> upload -> GET /jobs/{id}) until complete/failed
-    async function runOneJob(file) {
+    async function runOneJob(rawFile) {
+      // Resize first so an unreadable photo never creates a job or uploads.
+      const file = await resizeToJpeg(rawFile);
       const createRes = await fetch(`${API_BASE}/jobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -403,7 +431,7 @@ function ProcessingScreen({ files, onDone }) {
 
       const uploadRes = await fetch(upload_url, {
         method: 'PUT',
-        headers: { 'Content-Type': file.type || 'image/jpeg' },
+        headers: { 'Content-Type': 'image/jpeg' },
         body: file,
       });
       if (!uploadRes.ok) throw new Error(`upload ${uploadRes.status}`);
@@ -457,6 +485,16 @@ function ProcessingScreen({ files, onDone }) {
         <div style={{ padding: '12px 20px 20px' }}>
           <div style={{ fontFamily: "'Archivo Condensed', sans-serif", fontWeight: 700, fontSize: 30, letterSpacing: '0.2px', color: COLORS.ink }}>Something went wrong</div>
           <div style={{ fontSize: 14, color: COLORS.tagRed, marginTop: 6, fontFamily: 'JetBrains Mono, monospace' }}>{error}</div>
+        </div>
+        <div style={{ padding: '0 20px' }}>
+          <button
+            onClick={onRetry}
+            style={{
+              height: 48, padding: '0 20px', borderRadius: 12, border: 'none',
+              background: COLORS.ink, color: COLORS.manila,
+              fontSize: 15, fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+            }}
+          >Try again</button>
         </div>
       </div>
     );
@@ -1209,7 +1247,7 @@ function App() {
     <>
       {screen === 'home' && <HomeScreen onStartBatch={() => setScreen('upload')} onViewHistory={() => setScreen('history')} />}
       {screen === 'upload' && <UploadScreen onAnalyze={handleAnalyze} />}
-      {screen === 'processing' && <ProcessingScreen files={selectedFiles} onDone={handleDone} />}
+      {screen === 'processing' && <ProcessingScreen files={selectedFiles} onDone={handleDone} onRetry={() => setScreen('upload')} />}
       {screen === 'results' && jobData && (
         <ResultsScreen jobId={jobId} jobData={jobData} previewUrls={previewUrls} onNewBatch={handleNewBatch} onBackHome={() => setScreen('home')} />
       )}

@@ -5,6 +5,8 @@ import time
 
 import boto3
 import structlog
+from botocore.exceptions import ClientError
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from app.services.vision import analyze_image
 from app.services.pricing import fetch_sold_comps
@@ -23,6 +25,28 @@ s3 = boto3.client("s3")
 
 TABLE_NAME = os.environ["DYNAMODB_TABLE_NAME"]
 S3_BUCKET = os.environ["S3_BUCKET_NAME"]
+
+
+def _log_s3_retry(retry_state):
+    logger.warning(
+        "process_job_s3_get_retry",
+        attempt=retry_state.attempt_number,
+        wait_seconds=retry_state.next_action.sleep if retry_state.next_action else None,
+        error=str(retry_state.outcome.exception()),
+    )
+
+
+@retry(
+    retry=retry_if_exception_type(ClientError),
+    wait=wait_exponential(multiplier=1, min=1, max=16),
+    stop=stop_after_attempt(5),
+    before_sleep=_log_s3_retry,
+)
+def _get_image_bytes(bucket: str, key: str) -> bytes:
+    """Fetch the uploaded image from S3. Retries with backoff because the
+    client's upload can still be in flight when this Lambda first fires
+    (SQS DelaySeconds is a lower bound, not a guarantee the object exists)."""
+    return s3.get_object(Bucket=bucket, Key=key)["Body"].read()
 
 
 def _update_job(table, job_id: str, updates: dict):
@@ -50,7 +74,7 @@ def handler(event, context):
         try:
             _update_job(table, job_id, {"status": "processing"})
 
-            image_bytes = s3.get_object(Bucket=S3_BUCKET, Key=s3_key)["Body"].read()
+            image_bytes = _get_image_bytes(S3_BUCKET, s3_key)
             log.info("process_job_image_downloaded", size_bytes=len(image_bytes))
 
             item = asyncio.run(analyze_image(image_bytes, "image/jpeg"))

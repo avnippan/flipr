@@ -23,7 +23,7 @@ def _calculate_comp_result(search_query: str, items: list[dict]) -> CompResult:
     prices = [float(i["price"]["value"]) for i in usd_items if "price" in i]
 
     if not prices:
-        raise ValueError(f"No USD-priced sold comps found for '{search_query}'")
+        raise ValueError(f"No USD-priced active listings found for '{search_query}'")
 
     median = statistics.median(prices)
 
@@ -76,7 +76,7 @@ async def _get_ebay_token(client: httpx.AsyncClient) -> str:
 )
 async def fetch_sold_comps(search_query: str) -> CompResult:
     """
-    Look up eBay sold listings for a search query and return pricing stats.
+    Look up active eBay listings (asking prices) for a search query and return pricing stats.
     Falls back to a broader query (drops last word) if no results found.
     """
     log = logger.bind(search_query=search_query)
@@ -90,9 +90,9 @@ async def fetch_sold_comps(search_query: str) -> CompResult:
             headers={"Authorization": f"Bearer {token}"},
             params={
                 "q": search_query,
-                "filter": "soldItems:true",      # completed sales only
+                # Browse has no sold-items filter (sold data is Marketplace
+                # Insights only), so these are active listing asking prices.
                 "limit": 50,
-                "sort": "endTimeSoonest",        # most recent sales first
             },
         )
         resp.raise_for_status()
@@ -103,7 +103,7 @@ async def fetch_sold_comps(search_query: str) -> CompResult:
         if fallback:
             log.warning("pricing_no_results_retrying_broader", fallback_query=fallback)
             return await fetch_sold_comps(fallback)
-        raise ValueError(f"No sold comps found for '{search_query}' after broadening query")
+        raise ValueError(f"No active listings found for '{search_query}' after broadening query")
 
     result = _calculate_comp_result(search_query, items)
 

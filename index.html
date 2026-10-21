@@ -562,52 +562,6 @@ function FieldRow({ label, value }) {
   );
 }
 
-/* ─── Pricing explainability ─── */
-function PricingExplain({ comps, price, platform }) {
-  const [open, setOpen] = useState(false);
-  if (!comps) return null;
-  const sample = comps.sample_size;
-  const median = comps.median_price;
-  const low = comps.low_price;
-  const high = comps.high_price;
-  const rawComps = comps.raw_comps || [];
-  const isAboveMedian = sample > 0 && Number(price) > Number(median);
-  const platformLabel = platform === 'poshmark' ? 'Poshmark' : 'eBay';
-
-  return (
-    <div style={{ marginBottom: 14, background: '#F2F0EB', border: '1px solid #E4DFD3', borderRadius: 8, padding: '10px 12px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <FieldLabel>Why this price</FieldLabel>
-        {rawComps.length > 0 && (
-          <button
-            onClick={() => setOpen(o => !o)}
-            style={{ background: 'none', border: 'none', color: COLORS.tagRed, fontSize: 12, cursor: 'pointer', fontFamily: 'Inter, sans-serif', padding: 0 }}
-          >{open ? 'Hide comps ↑' : `See ${Math.min(rawComps.length, 10)} comps →`}</button>
-        )}
-      </div>
-      <div style={{ fontSize: 13, color: COLORS.ink, lineHeight: 1.5, marginTop: 4 }}>
-        {sample ? (
-          <>Priced from <strong>{sample} sold {sample === 1 ? 'listing' : 'listings'}</strong> (range ${Number(low).toFixed(2)}–${Number(high).toFixed(2)}, median ${Number(median).toFixed(2)}). Listed at <strong>${Number(price).toFixed(2)}</strong> — {isAboveMedian
-            ? `above median, reflecting ${platformLabel}'s typical listing/negotiation norms.`
-            : 'slightly under median to sell faster.'}</>
-        ) : (
-          <>No comparable sold listings found — price is an estimate.</>
-        )}
-      </div>
-      {open && rawComps.length > 0 && (
-        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {rawComps.slice(0, 10).map((c, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: COLORS.graphite }}>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{c.title || 'Sold item'}</span>
-              <span style={{ color: COLORS.ink, flexShrink: 0, marginLeft: 8 }}>${Number(c.sold_price || 0).toFixed(2)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function PoshmarkContent({ pm, fields, setFields, cardState, comps, expanded, setExpanded, inputStyle, monoInputStyle }) {
   const editing = cardState === 'editing';
   const poshPrice = fields.poshmark.price;
@@ -675,13 +629,12 @@ function PoshmarkContent({ pm, fields, setFields, cardState, comps, expanded, se
         </div>
       )}
 
-      <PricingExplain comps={comps} price={poshPrice} platform="poshmark" />
 
       {!editing && (
         <div style={{ marginBottom: 14, background: '#F2F0EB', border: '1px solid #E4DFD3', borderRadius: 8, padding: '10px 12px' }}>
           <FieldLabel>Why Poshmark is priced higher</FieldLabel>
           <div style={{ fontSize: 13, color: COLORS.ink, lineHeight: 1.5, marginTop: 4 }}>
-            Estimated 10% above eBay comp price — Poshmark buyers often negotiate.
+            Estimated 10% above the eBay suggested price — Poshmark buyers often negotiate.
           </div>
         </div>
       )}
@@ -798,7 +751,6 @@ function EbayContent({ eb, fields, setFields, cardState, comps, expanded, setExp
         )}
       </div>
 
-      <PricingExplain comps={comps} price={ebPrice} platform="ebay" />
 
       <div>
         <FieldLabel>Format &amp; Price</FieldLabel>
@@ -1022,10 +974,6 @@ function HomeScreen({ onStartBatch, onViewHistory }) {
           </div>
           <div style={{ display: 'flex', gap: 18, borderTop: '1px solid #E4DFD3', paddingTop: 12 }}>
             <div>
-              <div className="mono" style={{ fontSize: 15, color: COLORS.ink, fontWeight: 600 }}>50</div>
-              <div className="label">sold comps</div>
-            </div>
-            <div>
               <div className="mono" style={{ fontSize: 15, color: COLORS.ink, fontWeight: 600 }}>8.4s</div>
               <div className="label">photo to listing</div>
             </div>
@@ -1040,13 +988,12 @@ function HomeScreen({ onStartBatch, onViewHistory }) {
           Photograph it.<br />Price it.<br />List it.
         </div>
         <div style={{ fontSize: 14, color: COLORS.graphite, lineHeight: 1.5, marginBottom: 24 }}>
-          Upload a few photos. Get eBay and Poshmark listings priced from real sold comps.
+          Upload a few photos. Get eBay and Poshmark listings with a suggested price.
         </div>
 
         {/* Metrics row — real pipeline figures, not testimonials */}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
           {[
-            ['50', 'sold comps / item'],
             ['~8s', 'photo to listing'],
             ['1.0', 'quality score'],
           ].map(([value, label]) => (

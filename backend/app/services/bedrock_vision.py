@@ -3,10 +3,12 @@ import json
 import structlog
 import boto3
 from botocore.exceptions import ClientError
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 from app.config import settings
 from app.models.item import ItemMetadata
+from app.services.errors import GUARDRAIL_OTHER, GuardrailBlocked, guardrail_category
+from app.services.retry_utils import _is_transient_bedrock_error
 from app.services.vision import VISION_PROMPT
 
 logger = structlog.get_logger(__name__)
@@ -60,9 +62,10 @@ class BedrockVisionService:
         return self._client
 
     @retry(
-        retry=retry_if_exception_type(ClientError),
+        retry=retry_if_exception(_is_transient_bedrock_error),
         wait=wait_exponential(multiplier=1, min=2, max=30),
         stop=stop_after_attempt(3),
+        reraise=True,
     )
     def _call_converse(self, image_bytes: bytes, image_format: str, prompt: str) -> str:
         """Call Bedrock Converse API with image and prompt."""
@@ -96,14 +99,19 @@ class BedrockVisionService:
             
             if "guardrail" in error_msg.lower():
                 logger.warning("bedrock_vision_guardrail_block", error=error_msg)
-                raise ValueError("Image contains inappropriate content and cannot be processed.")
-            
+                raise GuardrailBlocked(GUARDRAIL_OTHER)
+
             logger.error(
                 "bedrock_vision_client_error",
                 code=error_code,
                 error=error_msg,
             )
             raise
+
+        if response.get("stopReason") == "guardrail_intervened":
+            category = guardrail_category(response.get("trace"))
+            logger.warning("bedrock_vision_guardrail_block", category=category)
+            raise GuardrailBlocked(category)
 
         return response["output"]["message"]["content"][0]["text"]
 
@@ -137,7 +145,7 @@ class BedrockVisionService:
             # Check for guardrail block message BEFORE trying to parse JSON
             if "content policy restrictions" in raw_text.lower():
                 log.warning("bedrock_vision_guardrail_blocked", response=raw_text)
-                raise ValueError(raw_text)
+                raise GuardrailBlocked(GUARDRAIL_OTHER)
             
             clean_json = _strip_json_markdown(raw_text)
             result = ItemMetadata(**json.loads(clean_json))

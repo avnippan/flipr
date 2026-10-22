@@ -3,10 +3,11 @@ import json
 import structlog
 import boto3
 from botocore.exceptions import ClientError
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 from app.config import settings
 from app.models.item import ItemMetadata, CompResult, ListingDraft
+from app.services.retry_utils import _is_transient_bedrock_error
 from app.services.listing import _build_prompt, _get_system_prompt, _validate_listing, score_listing
 
 logger = structlog.get_logger(__name__)
@@ -39,9 +40,10 @@ class BedrockListingService:
         return self._client
 
     @retry(
-        retry=retry_if_exception_type(ClientError),
+        retry=retry_if_exception(_is_transient_bedrock_error),
         wait=wait_exponential(multiplier=1, min=2, max=30),
         stop=stop_after_attempt(3),
+        reraise=True,
     )
     def _call_converse(self, system_prompt: str, user_prompt: str) -> str:
         """Call Bedrock Converse API with system and user prompts."""

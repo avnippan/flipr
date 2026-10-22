@@ -29,11 +29,13 @@ class ItemMetadata(BaseModel):
 
 class SoldComp(BaseModel):
     """
-    A single eBay sold listing used as a raw price reference.
-    
+    A single comparable listing used as a raw price reference.
+
     These are the individual data points that feed into CompResult
-    aggregation. Stored in raw_comps for UI display ("We found 23
-    sales at $28–$58") and for debugging pricing outliers.
+    aggregation. Stored in raw_comps for UI display and for debugging
+    pricing outliers. Whether the price is a sale or an asking price is
+    given by CompResult.data_type. The field name sold_price is kept for
+    stored jobs and the frontend.
     """
 
     title: str
@@ -43,8 +45,13 @@ class SoldComp(BaseModel):
 
 class CompResult(BaseModel):
     """
-    Aggregated pricing intelligence from eBay Browse API sold listings.
-    
+    Aggregated pricing intelligence from a comps provider.
+
+    data_type says whether the prices are completed sales ("sold") or
+    current asking prices ("active"); source is the provider name. Results
+    stored before these fields existed were all active listings, hence the
+    defaults.
+
     suggested_price is set at median * 0.95 — intentionally priced
     slightly under market rate to move inventory quickly rather than
     optimizing for maximum margin. raw_comps are retained for UI
@@ -52,6 +59,8 @@ class CompResult(BaseModel):
     """
 
     search_query: str
+    data_type: Literal["sold", "active"] = "active"
+    source: str = "ebay_browse"
     sample_size: int
     low_price: float
     median_price: float

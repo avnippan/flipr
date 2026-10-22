@@ -2,7 +2,7 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from app.api.schemas import AnalyzeResponse
 from app.services.vision import analyze_image
-from app.services.pricing import fetch_sold_comps
+from app.services.pricing import fetch_comps
 from app.services.listing import draft_listings
 from app.services.comp_aggregator import aggregate_comps
 
@@ -27,7 +27,7 @@ async def analyze_item(
         }
 
     metadata = await analyze_image(image_bytes, image.content_type, measurements)
-    comps = await fetch_sold_comps(metadata.search_query)
+    comps = await fetch_comps(metadata.search_query)
     listings = await draft_listings(metadata, comps)
     aggregated_pricing = await aggregate_comps(metadata.search_query, comps)
 

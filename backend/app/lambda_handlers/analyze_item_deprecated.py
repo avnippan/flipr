@@ -11,7 +11,7 @@ import json
 import structlog
 
 from app.services.vision import analyze_image
-from app.services.pricing import fetch_sold_comps
+from app.services.pricing import fetch_comps
 from app.services.listing import draft_listings
 
 logger = structlog.get_logger(__name__)
@@ -47,7 +47,7 @@ def handler(event, context):
 
         item = asyncio.run(analyze_image(image_bytes, mime_type, measurements))
 
-        comps = asyncio.run(fetch_sold_comps(item.search_query))
+        comps = asyncio.run(fetch_comps(item.search_query))
 
         async def _generate_listings():
             return await draft_listings(item, comps)

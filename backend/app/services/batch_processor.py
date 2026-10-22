@@ -6,7 +6,7 @@ from app.config import settings
 from app.core.job_models import JobStatus, ItemStatus
 from app.core.job_store import JobStore
 from app.services.listing import draft_listings
-from app.services.pricing import fetch_sold_comps
+from app.services.pricing import fetch_comps
 from app.services.vision import analyze_image
 from app.services.storage import download_image_from_s3
 
@@ -46,7 +46,7 @@ class BatchProcessor:
 
             image_bytes = await download_image_from_s3(s3_key)
             metadata = await analyze_image(image_bytes, mime_type)
-            comps = await fetch_sold_comps(metadata.search_query)
+            comps = await fetch_comps(metadata.search_query)
             listings = await draft_listings(metadata, comps)
 
             s3_url = f"https://{settings.s3_bucket_name}.s3.{settings.aws_region}.amazonaws.com/{s3_key}"

@@ -11,7 +11,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from app.services.errors import GUARDRAIL_MODERATION, GUARDRAIL_SENSITIVE_INFO, GuardrailBlocked
 from app.services.retry_utils import _is_missing_object
 from app.services.vision import analyze_image
-from app.services.pricing import fetch_sold_comps
+from app.services.pricing import fetch_comps
 from app.services.listing import draft_listings
 
 logger = structlog.get_logger(__name__)
@@ -115,7 +115,7 @@ def handler(event, context):
             item = asyncio.run(analyze_image(image_bytes, "image/jpeg"))
             log.info("process_job_vision_complete", item_type=item.item_type, brand=item.brand)
 
-            comps = asyncio.run(fetch_sold_comps(item.search_query))
+            comps = asyncio.run(fetch_comps(item.search_query))
             log.info("process_job_pricing_complete", median_price=comps.median_price)
 
             listings = asyncio.run(draft_listings(item, comps))

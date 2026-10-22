@@ -121,7 +121,7 @@ def _ebay_to_platform_pricing(result: CompResult) -> PlatformPricing | None:
         median_price=result.median_price,
         max_price=result.high_price,
         sample_size=result.sample_size,
-        price_type="sold",
+        price_type="sold" if result.data_type == "sold" else "asking",
     )
 
 

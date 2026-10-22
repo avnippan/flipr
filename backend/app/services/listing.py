@@ -225,8 +225,10 @@ def _build_prompt(item: ItemMetadata, comps: CompResult, platform: str) -> str:
     """Build the user prompt for listing generation."""
     details = ", ".join(item.notable_details) if item.notable_details else "none"
     size_str = item.size if item.size else "size not listed"
+    comp_noun = "sold" if comps.data_type == "sold" else "active"
+    asking_note = "" if comps.data_type == "sold" else "; asking prices, not confirmed sales"
     comp_summary = (
-        f"{comps.sample_size} recent sold listings · "
+        f"{comps.sample_size} {comp_noun} listings · "
         f"${comps.low_price}–${comps.high_price} range · "
         f"${comps.median_price} median"
     )
@@ -274,7 +276,7 @@ Item details:
 - Material: {item.material or "Unknown"}
 - Notable details: {details}
 
-Pricing context (from {comps.sample_size} real eBay sold listings):
+Pricing context (from {comps.sample_size} eBay {comp_noun} listings{asking_note}):
 {comp_summary}
 Suggested listing price: ${comps.suggested_price}
 

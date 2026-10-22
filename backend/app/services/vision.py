@@ -24,7 +24,7 @@ Rules:
 - item_type: Be specific. "denim jacket" not "jacket". "graphic tee" not "shirt".
 - condition: Assess based on visible wear, stains, fading, damage. Return null if condition isn't assessable.
 - search_query: This is the most important field. Produce a 3-7 word eBay search string that will match
-  actual sold listings. Include brand + item type + distinguishing features.
+  listings of the same item. Include brand + item type + distinguishing features.
   GOOD: "Levi's 501 jeans dark wash" / "Nike Air Max 90 white grey" / "Ralph Lauren polo shirt navy"
   BAD: "vintage blue pants" / "nice sneakers" / "men's shirt" (too generic — comps will be worthless)
 -- If a graphic appears to be from a known collab, IP, or artist (Disney, Marvel, Keith Haring, 

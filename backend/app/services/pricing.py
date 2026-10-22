@@ -1,11 +1,8 @@
 import statistics
 import structlog
 
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-import httpx
-
-from app.config import settings
 from app.models.item import CompResult, SoldComp
+from app.services.comps import CompListing, CompProvider, get_provider
 
 logger = structlog.get_logger(__name__)
 
@@ -16,27 +13,27 @@ def _build_fallback_query(search_query: str) -> str | None:
     return words[0] if len(words) > 1 else None
 
 
-def _calculate_comp_result(search_query: str, items: list[dict]) -> CompResult:
-    """Aggregate raw eBay items into a CompResult with pricing stats."""
-    usd_items = [i for i in items if i.get("price", {}).get("currency") == "USD"]
-
-    prices = [float(i["price"]["value"]) for i in usd_items if "price" in i]
+def _calculate_comp_result(
+    search_query: str, listings: list[CompListing], provider: CompProvider
+) -> CompResult:
+    """Aggregate provider listings into a CompResult with pricing stats."""
+    usd = [l for l in listings if l.currency == "USD"]
+    prices = [l.price for l in usd]
 
     if not prices:
-        raise ValueError(f"No USD-priced active listings found for '{search_query}'")
+        raise ValueError(f"No USD-priced comps found for '{search_query}'")
 
     median = statistics.median(prices)
 
     raw_comps = [
-        SoldComp(
-            title=i.get("title", ""),
-            sold_price=float(i["price"]["value"]),
-        )
-        for i in usd_items[:10]  # store top 10 for UI display
+        SoldComp(title=l.title, sold_price=l.price)
+        for l in usd[:10]  # store top 10 for UI display
     ]
 
     return CompResult(
         search_query=search_query,
+        data_type=provider.data_type,
+        source=provider.name,
         sample_size=len(prices),
         low_price=round(min(prices), 2),
         median_price=round(median, 2),
@@ -46,69 +43,36 @@ def _calculate_comp_result(search_query: str, items: list[dict]) -> CompResult:
     )
 
 
-async def _get_ebay_token(client: httpx.AsyncClient) -> str:
-    """Fetch eBay OAuth2 client credentials token. Valid for 2 hours."""
-    import base64
-
-    credentials = base64.b64encode(
-        f"{settings.ebay_app_id}:{settings.ebay_cert_id}".encode()
-    ).decode()
-
-    resp = await client.post(
-        "https://api.ebay.com/identity/v1/oauth2/token",
-        headers={
-            "Authorization": f"Basic {credentials}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-        data={
-            "grant_type": "client_credentials",
-            "scope": "https://api.ebay.com/oauth/api_scope",
-        },
-    )
-    resp.raise_for_status()
-    return resp.json()["access_token"]
-
-
-@retry(
-    retry=retry_if_exception_type((httpx.TimeoutException, httpx.HTTPStatusError)),
-    wait=wait_exponential(multiplier=1, min=2, max=30),
-    stop=stop_after_attempt(3),
-)
-async def fetch_sold_comps(search_query: str) -> CompResult:
+async def fetch_comps(
+    search_query: str, provider: CompProvider | None = None
+) -> CompResult:
     """
-    Look up active eBay listings (asking prices) for a search query and return pricing stats.
+    Look up comparable listings for a search query and return pricing stats.
+    The provider (COMPS_PROVIDER by default) decides where the data comes from
+    and whether it is sold or active; the result carries that label.
     Falls back to a broader query (drops last word) if no results found.
     """
-    log = logger.bind(search_query=search_query)
-    log.info("pricing_fetch_start")
+    provider = provider or get_provider()
+    log = logger.bind(search_query=search_query, provider=provider.name)
+    log.info("pricing_fetch_start", data_type=provider.data_type)
 
-    async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
-        token = await _get_ebay_token(client)
-
-        resp = await client.get(
-            "https://api.ebay.com/buy/browse/v1/item_summary/search",
-            headers={"Authorization": f"Bearer {token}"},
-            params={
-                "q": search_query,
-                # Browse has no sold-items filter (sold data is Marketplace
-                # Insights only), so these are active listing asking prices.
-                "limit": 50,
-            },
-        )
-        resp.raise_for_status()
-        items = resp.json().get("itemSummaries", [])
-
-    if not items:
-        fallback = _build_fallback_query(search_query)
+    query: str | None = search_query
+    while query:
+        listings = await provider.search(query)
+        if any(l.currency == "USD" for l in listings):
+            break
+        fallback = _build_fallback_query(query)
         if fallback:
             log.warning("pricing_no_results_retrying_broader", fallback_query=fallback)
-            return await fetch_sold_comps(fallback)
-        raise ValueError(f"No active listings found for '{search_query}' after broadening query")
+        query = fallback
+    else:
+        raise ValueError(f"No comps found for '{search_query}' after broadening query")
 
-    result = _calculate_comp_result(search_query, items)
+    result = _calculate_comp_result(query, listings, provider)
 
     log.info(
         "pricing_fetch_complete",
+        data_type=result.data_type,
         sample_size=result.sample_size,
         median_price=result.median_price,
         suggested_price=result.suggested_price,
@@ -117,23 +81,7 @@ async def fetch_sold_comps(search_query: str) -> CompResult:
     return result
 
 
-# --- Stub for development without eBay credentials ---
-
-async def fetch_sold_comps_stub(search_query: str) -> CompResult:
-    """
-    Returns hardcoded comp data for local development.
-    Replace fetch_sold_comps with this in tests or when eBay creds aren't available.
-    """
-    logger.info("pricing_stub_used", search_query=search_query)
-    return CompResult(
-        search_query=search_query,
-        sample_size=12,
-        low_price=18.00,
-        median_price=34.00,
-        high_price=58.00,
-        suggested_price=32.30,
-        raw_comps=[
-            SoldComp(title=f"{search_query} example listing {i}", sold_price=20.0 + i * 3)
-            for i in range(5)
-        ],
-    )
+# Deprecated name, kept so older callers keep working. It returns whatever the
+# configured provider supplies, which may be active listings; check
+# CompResult.data_type before calling the prices "sold".
+fetch_sold_comps = fetch_comps

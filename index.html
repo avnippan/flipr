@@ -600,6 +600,55 @@ function FieldRow({ label, value }) {
   );
 }
 
+/* ─── Pricing explainability ─── */
+function PricingExplain({ comps, price, platform }) {
+  const [open, setOpen] = useState(false);
+  if (!comps) return null;
+  const sample = comps.sample_size;
+  const median = comps.median_price;
+  const low = comps.low_price;
+  const high = comps.high_price;
+  const rawComps = comps.raw_comps || [];
+  // Older stored results have no data_type; they were all active listings.
+  const isSold = comps.data_type === 'sold';
+  const noun = isSold ? 'sold' : 'active';
+  const isAboveMedian = sample > 0 && Number(price) > Number(median);
+  const platformLabel = platform === 'poshmark' ? 'Poshmark' : 'eBay';
+
+  return (
+    <div style={{ marginBottom: 14, background: '#F2F0EB', border: '1px solid #E4DFD3', borderRadius: 8, padding: '10px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <FieldLabel>Why this price</FieldLabel>
+        {rawComps.length > 0 && (
+          <button
+            onClick={() => setOpen(o => !o)}
+            style={{ background: 'none', border: 'none', color: COLORS.tagRed, fontSize: 12, cursor: 'pointer', fontFamily: 'Inter, sans-serif', padding: 0 }}
+          >{open ? 'Hide comps ↑' : `See ${Math.min(rawComps.length, 10)} comps →`}</button>
+        )}
+      </div>
+      <div style={{ fontSize: 13, color: COLORS.ink, lineHeight: 1.5, marginTop: 4 }}>
+        {sample ? (
+          <>Priced from <strong>{sample} {noun} {sample === 1 ? 'listing' : 'listings'}</strong> (range ${Number(low).toFixed(2)}–${Number(high).toFixed(2)}, median ${Number(median).toFixed(2)}){isSold ? '' : ' — asking prices, not confirmed sales'}. Listed at <strong>${Number(price).toFixed(2)}</strong> — {isAboveMedian
+            ? `above median, reflecting ${platformLabel}'s typical listing/negotiation norms.`
+            : 'slightly under median to sell faster.'}</>
+        ) : (
+          <>No comparable listings found — price is an estimate.</>
+        )}
+      </div>
+      {open && rawComps.length > 0 && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {rawComps.slice(0, 10).map((c, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: COLORS.graphite }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{c.title || (isSold ? 'Sold item' : 'Active listing')}</span>
+              <span style={{ color: COLORS.ink, flexShrink: 0, marginLeft: 8 }}>${Number(c.sold_price || 0).toFixed(2)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PoshmarkContent({ pm, fields, setFields, cardState, comps, expanded, setExpanded, inputStyle, monoInputStyle }) {
   const editing = cardState === 'editing';
   const poshPrice = fields.poshmark.price;
@@ -667,6 +716,8 @@ function PoshmarkContent({ pm, fields, setFields, cardState, comps, expanded, se
         </div>
       )}
 
+
+      <PricingExplain comps={comps} price={poshPrice} platform="poshmark" />
 
       {!editing && (
         <div style={{ marginBottom: 14, background: '#F2F0EB', border: '1px solid #E4DFD3', borderRadius: 8, padding: '10px 12px' }}>
@@ -789,6 +840,8 @@ function EbayContent({ eb, fields, setFields, cardState, comps, expanded, setExp
         )}
       </div>
 
+
+      <PricingExplain comps={comps} price={ebPrice} platform="ebay" />
 
       <div>
         <FieldLabel>Format &amp; Price</FieldLabel>

@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     bedrock_model_id: str
     use_bedrock: bool = True
     
+    # Comps source: ebay_browse (active listings) or stub. See app/services/comps.
+    comps_provider: str = "ebay_browse"
+
     # Bedrock Guardrails
     bedrock_guardrail_id: str = ""
     bedrock_guardrail_version: str = "DRAFT"

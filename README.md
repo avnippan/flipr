@@ -1,6 +1,6 @@
 # Flipr
 
-An AI-powered resale automation tool. Upload a clothing photo and get back platform-specific listings for eBay and Poshmark, priced from real sold comps — not a guess.
+An AI-powered resale automation tool. Upload a clothing photo and get back platform-specific listings for eBay and Poshmark, priced from comparable live eBay listings — not a guess.
 
 **[Live demo →](http://flipr-demo-821122422427.s3-website-us-east-1.amazonaws.com/)**
 
@@ -12,7 +12,7 @@ Resellers spend most of their time on two things: figuring out what an item is w
 
 1. **Upload a photo** — goes straight to S3 via a presigned URL, never through the API server
 2. **AI identifies the item** — AWS Bedrock (Claude Sonnet 4.5, Converse API) reads brand, type, condition, color, material, and notable details
-3. **Live pricing** — eBay Browse API pulls recent sold listings and calculates a suggested price at 95th-percentile median, priced to move rather than sit
+3. **Live pricing** — eBay Browse API pulls active listings (asking prices, not confirmed sales) and calculates a suggested price at 95% of their median, priced to move rather than sit. The source sits behind a swappable comps provider that declares whether its data is sold or active
 4. **Platform-specific listings** — Bedrock generates separate copy for eBay and Poshmark, each following that platform's voice, structured item specifics, and format rules
 5. **Quality enforcement** — a deterministic post-processing pass strips marketing filler, enforces hashtag format, and maps categories — no hallucinated fields reach the user
 6. **Review and edit** — every field is user-editable before use; nothing gets copied without a chance to correct it
@@ -39,7 +39,7 @@ Client
   |                                          SQS triggers --> ProcessJobFunction
   |                                                              |
   |                                                              |-- Bedrock Claude -> vision (ItemMetadata)
-  |                                                              |-- eBay Browse API -> sold comps (CompResult)
+  |                                                              |-- eBay Browse API -> active-listing comps (CompResult)
   |                                                              |-- Bedrock Claude -> listings x2, concurrent
   |                                                              |     (eBay + Poshmark, item_specifics separated
   |                                                              |      from prose description)
@@ -79,7 +79,7 @@ Live posting needs an authenticated admin API key. Shipping that key in client-s
 | Content safety     | AWS Bedrock Guardrails                                    |
 | Image storage      | S3 (presigned uploads, bypasses the API server)           |
 | Job / token state  | DynamoDB (3 tables: jobs, eBay tokens, rate limits)        |
-| Pricing data       | eBay Browse API (sold listings only)                       |
+| Pricing data       | eBay Browse API (active listings; asking prices)             |
 | eBay posting       | eBay Sell API (Inventory to Offer to Publish)               |
 | Secrets            | SSM Parameter Store                                          |
 | IaC                | AWS SAM / CloudFormation                                       |
@@ -111,7 +111,7 @@ backend/
     |   |-- bedrock_vision.py   # Item identification
     |   |-- bedrock_listing.py  # Listing generation (eBay/Poshmark), routes to listing.py
     |   |-- listing.py          # Prompts, few-shot examples, deterministic validation
-    |   |-- pricing.py          # eBay sold comps + suggested price
+    |   |-- pricing.py          # comps provider -> price stats + suggested price
     |   |-- ebay_poster.py      # Sell API -- inventory item -> offer -> publish
     |   |-- ebay_token.py       # Lazy refresh, distributed-lock via conditional write
     |   `-- scrapers/           # Research prototype -- see note below, not used in production

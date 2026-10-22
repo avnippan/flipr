@@ -13,24 +13,36 @@ class GuardrailBlocked(Exception):
         self.category = category
 
 
-def _has_findings(node, key: str) -> bool:
-    """True if `key` appears anywhere in the nested trace with a non-empty value."""
+def _any_blocked(node) -> bool:
+    """True if any entry under `node` has action == "BLOCKED"."""
     if isinstance(node, dict):
-        for k, v in node.items():
-            if k == key and v:
-                return True
-            if _has_findings(v, key):
-                return True
-    elif isinstance(node, list):
-        return any(_has_findings(v, key) for v in node)
+        return node.get("action") == "BLOCKED" or any(_any_blocked(v) for v in node.values())
+    if isinstance(node, list):
+        return any(_any_blocked(v) for v in node)
+    return False
+
+
+def _policy_blocked(node, policy: str) -> bool:
+    """True if the nested trace has `policy` with at least one BLOCKED entry.
+
+    Bedrock lists detected-but-not-blocked entries too (action "NONE" or
+    "ANONYMIZED"), so a non-empty policy block does not mean it blocked.
+    """
+    if isinstance(node, dict):
+        return any(
+            (k == policy and _any_blocked(v)) or _policy_blocked(v, policy)
+            for k, v in node.items()
+        )
+    if isinstance(node, list):
+        return any(_policy_blocked(v, policy) for v in node)
     return False
 
 
 def guardrail_category(trace: dict | None) -> str:
     """Pick a category from a Converse `trace.guardrail` block. Unknown shapes
     fall through to GUARDRAIL_OTHER."""
-    if _has_findings(trace, "sensitiveInformationPolicy"):
+    if _policy_blocked(trace, "sensitiveInformationPolicy"):
         return GUARDRAIL_SENSITIVE_INFO
-    if _has_findings(trace, "contentPolicy"):
+    if _policy_blocked(trace, "contentPolicy"):
         return GUARDRAIL_MODERATION
     return GUARDRAIL_OTHER

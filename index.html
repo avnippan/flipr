@@ -127,6 +127,57 @@ function getPriceRange(items) {
   return { low: Math.min(...prices), high: Math.max(...prices) };
 }
 
+/* ─── Net profit by platform. Mirrors backend/app/services/fees.py; a unit
+   test fails if this table and the Python one differ. Change both together.
+   Poshmark and Mercari rates are not verified from official pages, see
+   docs/fees.md. ─── */
+const FEE_SCHEDULE = /* FEE_SCHEDULE:start */ {
+  "ebay": {
+    "label": "eBay",
+    "tiers": [{"max_price": 10.0, "pct": 13.6, "flat": 0.30}, {"pct": 13.6, "flat": 0.40}],
+    "default_shipping": 6.0,
+    "note": "13.6% + $0.30/$0.40 per order"
+  },
+  "poshmark": {
+    "label": "Poshmark",
+    "tiers": [{"max_price": 14.99, "pct": 0.0, "flat": 2.95}, {"pct": 20.0, "flat": 0.0}],
+    "default_shipping": 0.0,
+    "note": "$2.95 under $15, 20% at $15 and over"
+  },
+  "mercari": {
+    "label": "Mercari",
+    "tiers": [{"pct": 12.9, "flat": 0.30}],
+    "default_shipping": 6.0,
+    "note": "10% selling + ~2.9% + $0.30 processing"
+  }
+} /* FEE_SCHEDULE:end */;
+const PROFIT_PLATFORMS = ['ebay', 'poshmark', 'mercari'];
+
+function round2(n) { return Math.round(n * 100) / 100; }
+
+function platformFee(platform, price) {
+  if (!(price > 0)) return 0;
+  const tier = FEE_SCHEDULE[platform].tiers.find(t => price <= (t.max_price ?? Infinity));
+  return round2(price * tier.pct / 100 + tier.flat);
+}
+
+// econ = { cost: string, ship: { [platform]: string } }; empty strings fall
+// back to 0 cost and the platform's default shipping estimate.
+function netProfit(platform, price, econ) {
+  const shipRaw = econ.ship[platform];
+  const shipping = shipRaw === undefined || shipRaw === '' ? FEE_SCHEDULE[platform].default_shipping : Number(shipRaw) || 0;
+  const cost = Number(econ.cost) || 0;
+  const fee = platformFee(platform, price);
+  return { platform, price: round2(price), fee, shipping, cost, net: round2(price - fee - shipping - cost) };
+}
+
+function bestProfitPlatform(prices, econ) {
+  return PROFIT_PLATFORMS.reduce((best, p) =>
+    netProfit(p, prices[p], econ).net > netProfit(best, prices[best], econ).net ? p : best, PROFIT_PLATFORMS[0]);
+}
+
+const money = n => (n < 0 ? '-$' : '$') + Math.abs(n).toFixed(2);
+
 /* ─── Clipboard helper — navigator.clipboard requires HTTPS, so fall back
    to the legacy execCommand trick when running on plain HTTP (e.g. S3
    static website hosting has no TLS by default) ─── */
@@ -534,6 +585,13 @@ function ResultsScreen({ jobId, jobData, previewUrls, onNewBatch, onBackHome }) 
     ebay: item.result.listings.find(l => l.platform === "ebay"),
   }));
 
+  // Profit inputs live here so the batch summary and the cards agree.
+  const [prices, setPrices] = useState(() => listings.map(() => null));
+  const [econs, setEcons] = useState(() => listings.map(() => ({ cost: '', ship: {} })));
+  const [choices, setChoices] = useState(() => listings.map(() => null));
+  const setPriceAt = (i, p) => setPrices(a => a.map((x, j) => (j === i ? p : x)));
+  const setEconAt = (i, fn) => setEcons(a => a.map((x, j) => (j === i ? fn(x) : x)));
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <TopBar />
@@ -543,10 +601,17 @@ function ResultsScreen({ jobId, jobData, previewUrls, onNewBatch, onBackHome }) 
         <div style={{ fontSize: 14, color: COLORS.graphite, marginTop: 6 }}>Tap copy to use a listing</div>
       </div>
 
+      <BatchProfitSummary prices={prices} econs={econs} choices={choices} onPickAll={p => setChoices(listings.map(() => p))} />
+
       {/* Scrollable listing cards */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {listings.map((listing) => (
-          <ListingCard key={listing.itemIndex} listing={listing} jobId={listing.jobId} itemIndex={listing.itemIndex} />
+          <ListingCard key={listing.itemIndex} listing={listing} jobId={listing.jobId} itemIndex={listing.itemIndex}
+            econ={econs[listing.itemIndex]} choice={choices[listing.itemIndex]}
+            onPrices={setPriceAt}
+            onCost={(i, v) => setEconAt(i, e => ({ ...e, cost: v }))}
+            onShip={(i, p, v) => setEconAt(i, e => ({ ...e, ship: { ...e.ship, [p]: v } }))}
+            onChoice={(i, p) => setChoices(a => a.map((x, j) => (j === i ? p : x)))} />
         ))}
       </div>
 
@@ -652,7 +717,7 @@ function PricingExplain({ comps, price, platform }) {
 function PoshmarkContent({ pm, fields, setFields, cardState, comps, expanded, setExpanded, inputStyle, monoInputStyle }) {
   const editing = cardState === 'editing';
   const poshPrice = fields.poshmark.price;
-  const earnings = (poshPrice >= 15 ? poshPrice * 0.80 : poshPrice - 2.95).toFixed(2);
+  const earnings = (poshPrice - platformFee('poshmark', poshPrice)).toFixed(2);
   return (
     <>
       {editing ? (
@@ -758,7 +823,7 @@ function EbayContent({ eb, fields, setFields, cardState, comps, expanded, setExp
   const charCount = fields.ebay.title.length;
   const hasSpecs = Object.keys(fields.ebay.specifics).length > 0;
   const ebPrice = fields.ebay.price;
-  const ebEarnings = (ebPrice - (ebPrice * 0.1325) - 0.30).toFixed(2);
+  const ebEarnings = (ebPrice - platformFee('ebay', ebPrice)).toFixed(2);
   return (
     <>
       <div style={{ marginBottom: 14 }}>
@@ -868,7 +933,94 @@ function EbayContent({ eb, fields, setFields, cardState, comps, expanded, setExp
   );
 }
 
-function ListingCard({ listing, jobId, itemIndex }) {
+/* ─── Net profit: per-item panel and batch summary ─── */
+function ProfitPanel({ comps, prices, econ, choice, onCost, onShip, onChoice }) {
+  const best = bestProfitPlatform(prices, econ);
+  const selected = choice || best;
+  const isSold = comps?.data_type === 'sold';
+  const smallInput = {
+    width: 66, border: '1px solid #E4DFD3', borderRadius: 6, padding: '3px 6px',
+    fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: COLORS.ink, background: '#ffffff',
+  };
+  return (
+    <div style={{ padding: 16, borderBottom: '1px solid #E4DFD3' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <FieldLabel>Net profit</FieldLabel>
+        <label style={{ fontSize: 13, color: COLORS.graphite, display: 'flex', alignItems: 'center', gap: 6 }}>
+          Cost paid $
+          <input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0.00"
+            value={econ.cost} onChange={e => onCost(e.target.value)}
+            style={{ ...smallInput, width: 72 }} />
+        </label>
+      </div>
+      <div style={{ fontSize: 12, color: COLORS.graphite, lineHeight: 1.5, marginBottom: 10 }}>
+        {comps?.sample_size
+          ? <>Price from {comps.sample_size} {isSold ? 'sold' : 'active'} {comps.source || 'comp'} listings, ${Number(comps.low_price).toFixed(2)}–${Number(comps.high_price).toFixed(2)}{isSold ? '' : ' (asking prices, not confirmed sales)'}.</>
+          : <>No comps found, so prices are estimates.</>}
+        {' '}Poshmark is the eBay price +10% and Mercari equals the eBay price: estimates, not marketplace data.
+      </div>
+      {PROFIT_PLATFORMS.map(p => {
+        const r = netProfit(p, prices[p], econ);
+        const on = p === selected;
+        return (
+          <div key={p} onClick={() => onChoice(p)} style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginBottom: 6,
+            borderRadius: 8, cursor: 'pointer',
+            border: `1px solid ${on ? COLORS.ink : '#E4DFD3'}`, background: on ? '#F2F0EB' : '#ffffff',
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.ink }}>
+                {FEE_SCHEDULE[p].label}
+                {p === best && <span style={{ marginLeft: 6, fontSize: 9, fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase', color: COLORS.receiptGreen }}>best</span>}
+              </div>
+              <div className="mono" style={{ fontSize: 11, color: COLORS.graphite, marginTop: 2 }}>
+                {money(r.price)} − fee {money(r.fee)} − ship
+              </div>
+            </div>
+            <input type="number" min="0" step="0.01" inputMode="decimal"
+              value={econ.ship[p] ?? ''} placeholder={FEE_SCHEDULE[p].default_shipping.toFixed(2)}
+              onClick={e => e.stopPropagation()} onChange={e => onShip(p, e.target.value)}
+              style={smallInput} title="Shipping you pay" />
+            <div className="mono" style={{ fontSize: 15, fontWeight: 700, minWidth: 64, textAlign: 'right', color: r.net >= 0 ? COLORS.receiptGreen : COLORS.tagRed }}>{money(r.net)}</div>
+          </div>
+        );
+      })}
+      <div style={{ fontSize: 11, color: COLORS.graphite, marginTop: 4 }}>
+        Shipping boxes are what you pay (blank = estimate). Fees: {FEE_SCHEDULE[selected].note}.
+      </div>
+    </div>
+  );
+}
+
+function BatchProfitSummary({ prices, econs, choices, onPickAll }) {
+  const rows = prices.map((pr, i) => {
+    if (!pr) return null;
+    const p = choices[i] || bestProfitPlatform(pr, econs[i]);
+    return netProfit(p, pr[p], econs[i]);
+  }).filter(Boolean);
+  const sum = k => rows.reduce((a, r) => a + r[k], 0);
+  const btn = {
+    height: 28, padding: '0 10px', borderRadius: 999, border: 'none', cursor: 'pointer',
+    fontSize: 12, fontFamily: 'Inter, sans-serif', background: '#F5E6E4', color: COLORS.tagRed,
+  };
+  return (
+    <div style={{ margin: '0 20px 12px', padding: '12px 14px', background: '#ffffff', border: `1px solid ${COLORS.ink}1a`, borderRadius: 12 }}>
+      <FieldLabel>Batch net profit</FieldLabel>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
+        <div className="mono" style={{ fontSize: 24, fontWeight: 700, color: sum('net') >= 0 ? COLORS.receiptGreen : COLORS.tagRed }}>{money(round2(sum('net')))}</div>
+        <div className="mono" style={{ fontSize: 11, color: COLORS.graphite }}>
+          {money(round2(sum('price')))} sales − {money(round2(sum('fee')))} fees − {money(round2(sum('shipping')))} ship − {money(round2(sum('cost')))} cost
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <button style={btn} onClick={() => onPickAll(null)}>Best per item</button>
+        {PROFIT_PLATFORMS.map(p => <button key={p} style={btn} onClick={() => onPickAll(p)}>All {FEE_SCHEDULE[p].label}</button>)}
+      </div>
+    </div>
+  );
+}
+
+function ListingCard({ listing, jobId, itemIndex, econ, choice, onPrices, onCost, onShip, onChoice }) {
   const [platform, setPlatform] = useState('ebay');
   const [expanded, setExpanded] = useState(false);
   const [cardState, setCardState] = useState('view'); // 'view' | 'editing' | 'confirmed'
@@ -898,6 +1050,10 @@ function ListingCard({ listing, jobId, itemIndex }) {
       },
     };
   });
+
+  // Mercari has no price heuristic of its own: it follows the eBay price.
+  const profitPrices = { ebay: fields.ebay.price, poshmark: fields.poshmark.price, mercari: fields.ebay.price };
+  useEffect(() => { onPrices(itemIndex, profitPrices); }, [fields.ebay.price, fields.poshmark.price]);
 
   const title = fields.ebay.title || fields.poshmark.title || 'Item';
   const condition = meta.condition || pm.condition || '—';
@@ -983,6 +1139,9 @@ function ListingCard({ listing, jobId, itemIndex }) {
           : <EbayContent eb={eb} fields={fields} setFields={setFields} cardState={cardState} comps={listing.comps} expanded={expanded} setExpanded={setExpanded} inputStyle={inputStyle} monoInputStyle={monoInputStyle} />
         }
       </div>
+
+      <ProfitPanel comps={listing.comps} prices={profitPrices} econ={econ} choice={choice}
+        onCost={v => onCost(itemIndex, v)} onShip={(p, v) => onShip(itemIndex, p, v)} onChoice={p => onChoice(itemIndex, p)} />
 
       {/* Edit / Confirm action bar */}
       <div style={{ padding: '12px 16px', borderBottom: '1px solid #E4DFD3', display: 'flex', gap: 10 }}>

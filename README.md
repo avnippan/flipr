@@ -1,6 +1,6 @@
 # Flipr
 
-An AI-powered resale automation tool. Upload a clothing photo and get back platform-specific listings for eBay and Poshmark, priced from comparable live eBay listings — not a guess.
+An AI-powered resale automation tool. Upload a clothing photo and get back platform-specific listings for eBay and Poshmark, priced from comparable active eBay listings (asking prices, not confirmed sales).
 
 **[Live demo →](http://flipr-demo-821122422427.s3-website-us-east-1.amazonaws.com/)**
 
@@ -12,12 +12,18 @@ Resellers spend most of their time on two things: figuring out what an item is w
 
 1. **Upload a photo** — goes straight to S3 via a presigned URL, never through the API server
 2. **AI identifies the item** — AWS Bedrock (Claude Sonnet 4.5, Converse API) reads brand, type, condition, color, material, and notable details
-3. **Live pricing** — eBay Browse API pulls active listings (asking prices, not confirmed sales) and calculates a suggested price at 95% of their median, priced to move rather than sit. The source sits behind a swappable comps provider that declares whether its data is sold or active
+3. **Active-listing pricing** — eBay Browse API pulls comparable *active* listings and sets a suggested price at 95% of their median, priced to move rather than sit. These are asking prices, not what items actually sold for, and the UI says so on every price. The source sits behind a swappable comps provider that labels its data as sold or active, so a sold-price source can be added without changing the pipeline
 4. **Platform-specific listings** — Bedrock generates separate copy for eBay and Poshmark, each following that platform's voice, structured item specifics, and format rules
 5. **Quality enforcement** — a deterministic post-processing pass strips marketing filler, enforces hashtag format, and maps categories — no hallucinated fields reach the user
 6. **Review and edit** — every field is user-editable before use; nothing gets copied without a chance to correct it
 
 Live eBay posting is implemented (idempotent, rate-limited, three-step Sell API flow) but disabled in the public demo — it requires an authenticated admin endpoint that can't safely be exposed client-side. See [Architecture](#architecture) for why.
+
+### What the pricing is and isn't
+
+- **Is:** the median of comparable active eBay listings, discounted 5%, with the sample size, range and individual comps shown next to the price.
+- **Isn't:** a sold-price or market-value model. eBay's Browse API has no sold filter, and no sold-price data is used anywhere today.
+- **Poshmark:** the listed price is the eBay figure plus 10%, a disclosed heuristic and not Poshmark data.
 
 ---
 
@@ -123,7 +129,7 @@ backend/
 
 ### A note on `services/scrapers/`
 
-Early versions of Flipr explored cross-marketplace pricing by scraping Mercari, Depop, and Poshmark directly. That code is kept for reference but is **not used in production and never will be as-is** — none of those platforms offer a public API for sold-comp data, and scraping them carries real ToS/account-ban risk at any scale beyond a one-off personal check. Pricing is sourced exclusively from eBay's sanctioned Browse API. Poshmark's listing price is a disclosed heuristic (+10% over the eBay comp, reflecting that platform's negotiation culture), not scraped Poshmark data.
+Early versions of Flipr explored cross-marketplace pricing by scraping Mercari, Depop, and Poshmark directly. That code is kept for reference but is **not used in production and never will be as-is** — none of those platforms offer a public API for sold-price data, and scraping them carries real ToS/account-ban risk at any scale beyond a one-off personal check. Pricing is sourced exclusively from eBay's sanctioned Browse API. Poshmark's listing price is a disclosed heuristic (+10% over the eBay comp, reflecting that platform's negotiation culture), not scraped Poshmark data.
 
 ---
 

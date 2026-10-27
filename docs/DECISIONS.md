@@ -24,3 +24,4 @@ One row per decision. Add rows; don't rewrite history. Status: Done, Proposed, P
 | 18 | Invite code + daily scan cap before sharing; real auth designed later | Cheap protection against bill abuse | Proposed |
 | 19 | HTTPS through CloudFront | "Not Secure" warning hurts trust | Proposed |
 | 20 | Don't compete on photo-to-listing; test visible comps, confidence flags, and niche accuracy | The free eBay tool and paid tools already cover the core loop | Unvalidated |
+| 21 | Price from active eBay listings (0.95 x median) and label them asking prices; supersedes the "sold comps" wording in #9 | Browse API has no sold filter; sold data needs Marketplace Insights or a paid source | Done |

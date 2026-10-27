@@ -3,7 +3,7 @@
 Read `docs/STATUS.md` first (local file, gitignored) for current state and known problems.
 
 ## What this is
-Photo of a clothing item -> Bedrock Claude vision -> eBay sold comps -> price -> eBay and Poshmark listing drafts. Serverless on AWS (Lambda, API Gateway, SQS, DynamoDB, S3). Frontend is a single `index.html` (React via UMD, no build step) hosted on S3.
+Photo of a clothing item -> Bedrock Claude vision -> eBay active-listing comps (asking prices, not sold) -> price -> eBay and Poshmark listing drafts. Serverless on AWS (Lambda, API Gateway, SQS, DynamoDB, S3). Frontend is a single `index.html` (React via UMD, no build step) hosted on S3.
 
 ## Layout
 - `template.yaml`: all AWS resources (SAM). `samconfig.dev.toml`, `samconfig.prod.toml`.

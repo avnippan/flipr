@@ -33,6 +33,10 @@ Parameters:
   ApiKey:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /flipr/api-key
+  DemoWebsiteDomain:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /flipr/demo-website-domain
+    Description: S3 website endpoint (no scheme) of the demo bucket, which lives outside this stack
   DailyJobLimit:
     Type: Number
     Default: 50
@@ -339,6 +343,54 @@ Resources:
       KeyType: API_KEY
       UsagePlanId: !Ref AdminUsagePlan
 
+  # ── Demo frontend over HTTPS ─────────────────────────────────────────────────
+  # The demo bucket is an S3 static website (HTTP only) created outside this stack.
+  # CloudFront fronts it as a custom origin; the bucket itself is not touched.
+
+  DemoCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "${AWS::StackName}-demo-short-ttl"
+        Comment: Short TTL so index.html changes show up within a minute
+        DefaultTTL: 60
+        MinTTL: 0
+        MaxTTL: 300
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig:
+            CookieBehavior: none
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
+  DemoDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "Flipr demo over HTTPS (${AWS::StackName})"
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        Origins:
+          - Id: DemoS3Website
+            DomainName: !Ref DemoWebsiteDomain
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              HTTPPort: 80
+              HTTPSPort: 443
+        DefaultCacheBehavior:
+          TargetOriginId: DemoS3Website
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: !Ref DemoCachePolicy
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
 Outputs:
@@ -372,3 +424,9 @@ Outputs:
   AdminApiKeyId:
     Description: "Admin API key ID - retrieve value with: aws apigateway get-api-key --api-key <id> --include-value"
     Value: !Ref AdminApiKey
+  DemoUrl:
+    Description: HTTPS URL for the demo
+    Value: !Sub "https://${DemoDistribution.DomainName}"
+  DemoDistributionId:
+    Description: Distribution ID for cache invalidations
+    Value: !Ref DemoDistribution

@@ -17,9 +17,32 @@ aws ssm put-parameter --name /flipr/ebay-return-policy-id     --value "YOUR_VALU
 aws ssm put-parameter --name /flipr/ebay-merchant-location-key --value "YOUR_VALUE" --type String
 aws ssm put-parameter --name /flipr/api-key                   --value "YOUR_VALUE" --type String
 aws ssm put-parameter --name /flipr/invite-code               --value "YOUR_VALUE" --type String
+aws ssm put-parameter --name /flipr/demo-website-domain       --value "<demo-bucket>.s3-website-us-east-1.amazonaws.com" --type String
 ```
 
 `/flipr/invite-code` gates `POST /jobs` (sent as the `X-Invite-Code` header). It is a speed bump against casual abuse, not real authentication. To rotate it, run `put-parameter` again with `--overwrite`; warm Lambdas pick up the new value after their next cold start. The daily cap on jobs is the `DailyJobLimit` stack parameter (default 50 per UTC day).
+
+`/flipr/demo-website-domain` is the S3 website endpoint (no `http://`) of the demo bucket. The bucket was created outside this stack and the stack never modifies it; CloudFront only reads from it.
+
+## Serving the demo over HTTPS
+
+The stack creates a CloudFront distribution in front of the demo bucket (S3 website endpoints are HTTP only). After `sam deploy`, the `DemoUrl` and `DemoDistributionId` outputs give the HTTPS URL and the distribution ID. The first deploy takes 5 to 15 minutes while CloudFront provisions.
+
+The deploy user needs CloudFront permissions for distributions and cache policies (`CreateDistribution`, `UpdateDistribution`, `DeleteDistribution`, `GetDistribution*`, `TagResource`, `CreateInvalidation`, plus `CreateCachePolicy`, `UpdateCachePolicy`, `DeleteCachePolicy`, `GetCachePolicy*`). Add them as an inline or customer-managed policy, since the user is at its managed-policy limit.
+
+```bash
+curl -I https://<DemoUrl domain>/     # 200
+curl -I http://<DemoUrl domain>/      # 301 to https
+```
+
+After each frontend change, upload `index.html` and invalidate the cache (the cache TTL is 60 seconds, so the invalidation only makes it instant):
+
+```bash
+aws s3 cp index.html s3://<demo-bucket>/index.html --content-type "text/html"
+aws cloudfront create-invalidation --distribution-id <DemoDistributionId> --paths "/*"
+```
+
+The API and image bucket already allow any origin in CORS, so the new HTTPS origin needs no CORS change. No custom domain or WAF is configured.
 
 ## Build and Deploy
 

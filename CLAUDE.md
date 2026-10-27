@@ -15,7 +15,7 @@ Photo of a clothing item -> Bedrock Claude vision -> eBay active-listing comps (
 
 ## Commands (repo root, PowerShell)
 - Build and deploy: `sam build` then `sam deploy --config-file samconfig.dev.toml`. Always build first; deploy ships whatever is in `.aws-sam/build`.
-- Frontend deploy (`<demo-bucket>` is the S3 demo bucket, which lives outside the SAM stack): `aws s3 cp index.html s3://<demo-bucket>/index.html --content-type "text/html"`
+- Frontend deploy (`<demo-bucket>` is the S3 demo bucket, which lives outside the SAM stack): `aws s3 cp index.html s3://<demo-bucket>/index.html --content-type "text/html"`, then `aws cloudfront create-invalidation --distribution-id <id> --paths "/*"` (id is the `DemoDistributionId` stack output)
 - Logs: `aws logs tail /aws/lambda/flipr-process-job-dev --since 10m`
 - Upload test: `scripts/race-test.ps1`
 - Tests: check `tests/` before assuming; integration tests may call real AWS.
@@ -40,6 +40,7 @@ Photo of a clothing item -> Bedrock Claude vision -> eBay active-listing comps (
 - Env var for the jobs table is `DYNAMODB_TABLE_NAME` (not JOBS_TABLE_NAME).
 - Backend field is `hashtags` (there is no `style_tags`). `item_specifics` stays separate from the prose `description`.
 - `POST /jobs` needs the `X-Invite-Code` header (SSM `/flipr/invite-code`, type `String`) and is capped per UTC day (`DailyJobLimit`, RateLimitsTable key `JOBS#<date>`). Uploads are presigned POST, not PUT: send `upload_fields` as form fields.
+- The demo is served by CloudFront (stack resource `DemoDistribution`). Its origin is the S3 website endpoint from SSM `/flipr/demo-website-domain` (type `String`); the bucket itself is never managed by the stack. Cache TTL is 60s.
 - Poshmark price is a +10% heuristic over the eBay comp. Keep the on-screen disclosure.
 - Frontend: no CSS `aspect-ratio` in grids (iOS Safari bug), use the padding-top trick. Clipboard needs the execCommand fallback on HTTP. Blob URLs die on reload.
 

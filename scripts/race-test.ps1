@@ -10,7 +10,8 @@ Then check the retries:
 
 Notes:
 - Uploads raw bytes (no browser resize). A file over 3.5 MiB exercises the worker size guard.
-- Add -InviteCode once the invite-code check is deployed.
+- POST /jobs requires the invite code (SSM /flipr/invite-code). Pass it with -InviteCode, e.g. -InviteCode "your-code".
+  Without it, or with a wrong one, the API returns 401. After DAILY_JOB_LIMIT jobs in a UTC day it returns 429.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Image,
@@ -33,7 +34,11 @@ function Elapsed { [int]((Get-Date) - $t0).TotalSeconds }
 
 "job_id: $($job.job_id)  image: $sizeMiB MiB"
 Start-Sleep -Seconds $DelaySeconds
-Invoke-WebRequest -Uri $job.upload_url -Method PUT -InFile $Image -ContentType "image/jpeg" -UseBasicParsing | Out-Null
+# Presigned POST: send the policy fields, then the file (curl.exe handles multipart on Windows PowerShell 5 too)
+$formArgs = @()
+foreach ($p in $job.upload_fields.PSObject.Properties) { $formArgs += "-F"; $formArgs += "$($p.Name)=$($p.Value)" }
+& curl.exe -sS --fail @formArgs -F "file=@$Image;type=image/jpeg" $job.upload_url | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Upload failed (curl exit $LASTEXITCODE). S3 rejects files over the size limit." }
 "uploaded at +$(Elapsed)s"
 
 for ($i = 0; $i -lt 40; $i++) {

@@ -16,7 +16,10 @@ aws ssm put-parameter --name /flipr/ebay-payment-policy-id    --value "YOUR_VALU
 aws ssm put-parameter --name /flipr/ebay-return-policy-id     --value "YOUR_VALUE" --type String
 aws ssm put-parameter --name /flipr/ebay-merchant-location-key --value "YOUR_VALUE" --type String
 aws ssm put-parameter --name /flipr/api-key                   --value "YOUR_VALUE" --type String
+aws ssm put-parameter --name /flipr/invite-code               --value "YOUR_VALUE" --type String
 ```
+
+`/flipr/invite-code` gates `POST /jobs` (sent as the `X-Invite-Code` header). It is a speed bump against casual abuse, not real authentication. To rotate it, run `put-parameter` again with `--overwrite`; warm Lambdas pick up the new value after their next cold start. The daily cap on jobs is the `DailyJobLimit` stack parameter (default 50 per UTC day).
 
 ## Build and Deploy
 
@@ -43,6 +46,7 @@ Note the API URL from the deploy output — you'll need it below.
 ```bash
 curl -X POST https://YOUR_API_URL/prod/jobs \
   -H "Content-Type: application/json" \
+  -H "X-Invite-Code: YOUR_INVITE_CODE" \
   -d '{"marketplace": "ebay"}'
 ```
 
@@ -50,7 +54,8 @@ Response (202 Accepted):
 ```json
 {
   "job_id": "abc-123",
-  "upload_url": "https://s3.amazonaws.com/...presigned...",
+  "upload_url": "https://s3.amazonaws.com/...presigned-post...",
+  "upload_fields": {"key": "...", "Content-Type": "image/jpeg", "policy": "..."},
   "status_url": "/jobs/abc-123",
   "expires_in": 300
 }
@@ -58,13 +63,17 @@ Response (202 Accepted):
 
 ### Step 2 — Upload image directly to S3
 
-No Lambda involved — client uploads directly to the presigned URL.
+No Lambda involved — client uploads directly to S3 with a presigned POST. S3 rejects files over 3.5 MiB (3,670,016 bytes). Send every `upload_fields` entry as a form field, with `file` last.
 
 ```bash
-curl -X PUT "<upload_url>" \
-  -H "Content-Type: image/jpeg" \
-  --data-binary @path/to/image.jpg
+curl -X POST "<upload_url>" \
+  -F "key=<upload_fields.key>" \
+  -F "Content-Type=image/jpeg" \
+  -F "<other upload_fields entries>" \
+  -F "file=@path/to/image.jpg"
 ```
+
+Errors from step 1: `401` for a missing or wrong invite code, `429` once the daily job cap is reached.
 
 ### Step 3 — Poll job status
 

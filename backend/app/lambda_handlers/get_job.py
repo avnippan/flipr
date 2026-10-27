@@ -5,6 +5,9 @@ from decimal import Decimal
 import boto3
 import structlog
 
+from app.core.observability import configure_logging, start_request
+
+configure_logging()
 logger = structlog.get_logger(__name__)
 
 
@@ -21,9 +24,11 @@ TABLE_NAME = os.environ["DYNAMODB_TABLE_NAME"]
 
 
 def handler(event, context):
+    start_request(context)
     try:
         job_id = event["pathParameters"]["job_id"]
-        log = logger.bind(job_id=job_id)
+        start_request(context, job_id=job_id)
+        log = logger
         log.info("get_job_start")
 
         table = dynamodb.Table(TABLE_NAME)

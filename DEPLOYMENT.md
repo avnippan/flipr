@@ -24,6 +24,16 @@ aws ssm put-parameter --name /flipr/demo-website-domain       --value "<demo-buc
 
 `/flipr/demo-website-domain` is the S3 website endpoint (no `http://`) of the demo bucket. The bucket was created outside this stack and the stack never modifies it; CloudFront only reads from it.
 
+## Alarm notifications
+
+The stack creates a CloudWatch alarm on failed jobs and an SNS topic for it. To get an email when it fires, deploy with your address (don't commit it to `samconfig`):
+
+```bash
+sam deploy --config-file samconfig.dev.toml --parameter-overrides Stage=dev Environment=dev AlarmEmail=you@example.com
+```
+
+AWS then emails a confirmation link, and notifications start only after you click it. `--parameter-overrides` replaces the list in the samconfig file, so repeat `Stage` and `Environment` as shown.
+
 ## Serving the demo over HTTPS
 
 The stack creates a CloudFront distribution in front of the demo bucket (S3 website endpoints are HTTP only). After `sam deploy`, the `DemoUrl` and `DemoDistributionId` outputs give the HTTPS URL and the distribution ID. The first deploy takes 5 to 15 minutes while CloudFront provisions.

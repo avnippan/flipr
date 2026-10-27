@@ -2,7 +2,7 @@
 
 An AI-powered resale automation tool. Upload a clothing photo and get back platform-specific listings for eBay and Poshmark, priced from comparable active eBay listings (asking prices, not confirmed sales).
 
-**[Live demo →](http://flipr-demo-821122422427.s3-website-us-east-1.amazonaws.com/)**
+**[Live demo →](https://d377x649uzc3in.cloudfront.net)**
 
 ---
 

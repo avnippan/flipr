@@ -1,5 +1,7 @@
 # Flipr
 
+[![CI](https://github.com/avnippan/flipr/actions/workflows/ci.yml/badge.svg)](https://github.com/avnippan/flipr/actions/workflows/ci.yml)
+
 An AI-powered resale automation tool. Upload a clothing photo and get back platform-specific listings for eBay and Poshmark, priced from comparable active eBay listings (asking prices, not confirmed sales).
 
 **[Live demo →](https://d377x649uzc3in.cloudfront.net)**
@@ -158,6 +160,19 @@ uvicorn main:app --reload
 ```
 
 API at `http://localhost:8000`, interactive docs at `/docs`.
+
+---
+
+## Tests and CI
+
+```bash
+pip install -r backend/requirements.txt ruff cfn-lint
+ruff check .                         # lint: syntax errors, undefined names, unused imports
+cfn-lint template.yaml               # lint the CloudFormation template
+PYTHONPATH=backend pytest tests/unit # unit tests, no AWS calls
+```
+
+GitHub Actions runs these three checks on every push and pull request (`.github/workflows/ci.yml`). The tests in `tests/integration` can call real AWS, so CI does not run them.
 
 ---
 

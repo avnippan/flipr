@@ -33,6 +33,10 @@ Parameters:
   ApiKey:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /flipr/api-key
+  DailyJobLimit:
+    Type: Number
+    Default: 50
+    Description: Max jobs created per UTC day (each costs roughly 2 cents in Bedrock)
   BedrockModelId:
     Type: String
     Default: us.anthropic.claude-sonnet-4-5-20250929-v1:0
@@ -162,6 +166,18 @@ Resources:
     Type: AWS::Serverless::Api
     Properties:
       StageName: !Ref Stage
+      # Stage throttling. Normal use is one person polling GET /jobs/{id} every 2s
+      # (about 0.5 req/s per photo), so 10 req/s with burst 20 never touches it,
+      # but it caps a script. POST /jobs is the expensive call, so it is tighter.
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingRateLimit: 10
+          ThrottlingBurstLimit: 20
+        - ResourcePath: "/jobs"
+          HttpMethod: POST
+          ThrottlingRateLimit: 2
+          ThrottlingBurstLimit: 5
       Cors:
         AllowMethods: "'*'"
         AllowHeaders: "'*'"
@@ -180,7 +196,7 @@ Resources:
       FunctionName: !Sub flipr-create-job-${Environment}
       CodeUri: backend/
       Handler: app.lambda_handlers.create_job.handler
-      Description: Create analysis job and return presigned S3 upload URL
+      Description: Create analysis job and return presigned S3 upload URL (invite code and daily cap required)
       Timeout: 10
       Events:
         CreateJob:
@@ -196,9 +212,15 @@ Resources:
             BucketName: !Ref ImagesBucket
         - SQSSendMessagePolicy:
             QueueName: !GetAtt AnalysisQueue.QueueName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RateLimitsTable
+        - SSMParameterReadPolicy:
+            ParameterName: flipr/invite-code
       Environment:
         Variables:
           ANALYSIS_QUEUE_URL: !Ref AnalysisQueue
+          INVITE_CODE_PARAM: /flipr/invite-code
+          DAILY_JOB_LIMIT: !Ref DailyJobLimit
 
   ProcessJobFunction:
     Type: AWS::Serverless::Function
@@ -245,29 +267,6 @@ Resources:
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref JobsTable
-
-  # DEPRECATED - replaced by async job pattern (CreateJobFunction + ProcessJobFunction + GetJobFunction)
-  AnalyzeItemFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub flipr-analyze-item-${Environment}
-      CodeUri: backend/
-      Handler: app.lambda_handlers.analyze_item.handler
-      Description: Analyze item and generate listings (public, no auth)
-      Events:
-        AnalyzeItem:
-          Type: Api
-          Properties:
-            RestApiId: !Ref FlipApiGateway
-            Path: /items/analyze
-            Method: POST
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action:
-                - bedrock:InvokeModel
-                - bedrock:InvokeModelWithResponseStream
-              Resource: !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/us.anthropic.claude-sonnet-4-5-*
 
   PostToEbayFunction:
     Type: AWS::Serverless::Function
@@ -352,9 +351,6 @@ Outputs:
   AnalysisDLQUrl:
     Description: SQS dead-letter queue URL for failed analysis jobs
     Value: !Ref AnalysisDLQ
-  AnalyzeItemFunctionArn:
-    Description: Lambda function ARN
-    Value: !GetAtt AnalyzeItemFunction.Arn
   PostToEbayFunctionArn:
     Description: Lambda function ARN
     Value: !GetAtt PostToEbayFunction.Arn

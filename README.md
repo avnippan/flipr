@@ -35,7 +35,8 @@ Production runs serverless on AWS. A local FastAPI server exists for development
 Client
   |
   |-- POST /jobs ------------------------> CreateJobFunction
-  |                                          |
+  |   (X-Invite-Code header; 401 if wrong,    |
+  |    429 past the daily job cap)            |
   |                                          |-- writes job record -> DynamoDB (JobsTable)
   |                                          |-- generates presigned S3 URL
   |                                          `-- enqueues -> SQS (AnalysisQueue)
@@ -59,6 +60,10 @@ POST /admin/post-to-ebay --------------> PostToEbayFunction
   (API-key gated, idempotent via conditional DynamoDB write, 50/day rate limit,
    lazy OAuth token refresh with a distributed lock against concurrent refresh)
 ```
+
+### Abuse protection on `POST /jobs`
+
+Every job costs Bedrock tokens, so the endpoint is gated three ways: an invite code (`X-Invite-Code` header, checked against SSM `/flipr/invite-code`, returns 401), an atomic daily cap on jobs (DynamoDB conditional write, `DailyJobLimit` parameter, default 50 per UTC day, returns 429), and API Gateway throttling. Uploads use a presigned POST, so S3 itself rejects files over 3.5 MiB. The invite code is a speed bump kept in the browser's localStorage, not real authentication; per-user auth is not built.
 
 ### Why async, not synchronous
 
@@ -112,7 +117,7 @@ backend/
     |   |-- get_job.py          # GET /jobs/{id}
     |   |-- post_to_ebay.py     # POST /admin/post-to-ebay (idempotent, rate-limited)
     |   |-- refresh_ebay_token.py  # Weekly cron -- monitors refresh-token expiry
-    |   `-- analyze_item.py     # Deprecated synchronous path, kept for reference
+    |   `-- analyze_item.py     # Deprecated synchronous path, kept for reference; its API route is removed
     |-- services/
     |   |-- bedrock_vision.py   # Item identification
     |   |-- bedrock_listing.py  # Listing generation (eBay/Poshmark), routes to listing.py

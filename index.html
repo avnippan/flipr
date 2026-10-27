@@ -74,6 +74,36 @@ const { useState, useEffect, useRef } = React;
 
 const API_BASE = "https://bvl98eh3bf.execute-api.us-east-1.amazonaws.com/dev";
 
+/* ─── Invite code (deterrent only: it sits in localStorage, visible to the browser) ─── */
+function getInviteCode() {
+  try { return localStorage.getItem('flipr_invite_code') || ''; } catch (e) { return ''; }
+}
+
+function setInviteCode(code) {
+  try {
+    if (code) localStorage.setItem('flipr_invite_code', code);
+    else localStorage.removeItem('flipr_invite_code');
+  } catch (e) { /* storage unavailable: the code is asked for again next time */ }
+}
+
+// Ask once; returns '' if the user cancels
+function ensureInviteCode() {
+  let code = getInviteCode();
+  if (!code) {
+    code = (window.prompt('Enter your Flipr invite code to continue:') || '').trim();
+    setInviteCode(code);
+  }
+  return code;
+}
+
+async function readApiError(res) {
+  try {
+    const data = await res.json();
+    if (data && data.error) return data.error;
+  } catch (e) { /* not JSON */ }
+  return `Request failed (${res.status})`;
+}
+
 /* ─── Price-tag palette — shared across every screen ─── */
 const COLORS = {
   manila: '#F2F0EB',
@@ -423,17 +453,21 @@ function ProcessingScreen({ files, onDone, onRetry }) {
       const file = await resizeToJpeg(rawFile);
       const createRes = await fetch(`${API_BASE}/jobs`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Invite-Code': getInviteCode() },
         body: JSON.stringify({ marketplace: 'ebay' }),
       });
-      if (!createRes.ok) throw new Error(`create job ${createRes.status}: ${await createRes.text()}`);
-      const { job_id, upload_url } = await createRes.json();
+      if (createRes.status === 401) {
+        setInviteCode(''); // wrong code: ask again next time
+        throw new Error('That invite code was not accepted. Reload and enter it again.');
+      }
+      if (!createRes.ok) throw new Error(await readApiError(createRes));
+      const { job_id, upload_url, upload_fields } = await createRes.json();
 
-      const uploadRes = await fetch(upload_url, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'image/jpeg' },
-        body: file,
-      });
+      // Presigned POST: the policy fields go first and the file must be the last field
+      const form = new FormData();
+      Object.entries(upload_fields).forEach(([k, v]) => form.append(k, v));
+      form.append('file', file);
+      const uploadRes = await fetch(upload_url, { method: 'POST', body: form });
       if (!uploadRes.ok) throw new Error(`upload ${uploadRes.status}`);
 
       while (!cancelled) {
@@ -450,6 +484,8 @@ function ProcessingScreen({ files, onDone, onRetry }) {
 
     async function run() {
       try {
+        // Ask for the code once up front, not once per parallel job
+        if (!ensureInviteCode()) throw new Error('An invite code is needed to analyze photos.');
         // Lambda's /jobs endpoint processes one image per job, so run each
         // uploaded photo as its own job, in parallel, then combine results.
         const results = await Promise.all(files.map(runOneJob));

@@ -18,7 +18,8 @@ Photo of a clothing item -> Bedrock Claude vision -> eBay active-listing comps (
 - Frontend deploy (`<demo-bucket>` is the S3 demo bucket, which lives outside the SAM stack): `aws s3 cp index.html s3://<demo-bucket>/index.html --content-type "text/html"`, then `aws cloudfront create-invalidation --distribution-id <id> --paths "/*"` (id is the `DemoDistributionId` stack output)
 - Logs: `aws logs tail /aws/lambda/flipr-process-job-dev --since 10m`
 - Upload test: `scripts/race-test.ps1`
-- Tests: check `tests/` before assuming; integration tests may call real AWS.
+- Tests: `PYTHONPATH=backend pytest tests/unit`. Check `tests/` before assuming; integration tests may call real AWS. New `test_*.py` files need `git add -f` (they are gitignored).
+- Lint: `ruff check .` (config in `ruff.toml`, real bugs only) and `cfn-lint template.yaml`. CI (`.github/workflows/ci.yml`) runs both plus the unit tests on every push and PR.
 
 ## Rules
 - Official marketplace APIs only. No scraping.

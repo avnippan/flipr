@@ -1,6 +1,5 @@
 import base64
 import hashlib
-import logging
 import structlog
 import httpx
 from openai import AsyncOpenAI

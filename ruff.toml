@@ -1,0 +1,6 @@
+# Lint for real bugs only (syntax errors, undefined names, unused imports/variables).
+# Style rules are left off so CI doesn't fail on formatting taste.
+extend-exclude = ["backend/app/services/scrapers"]
+
+[lint]
+select = ["E9", "F"]

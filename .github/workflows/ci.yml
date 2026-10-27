@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt ruff cfn-lint
+
+      - name: Lint Python (ruff)
+        run: ruff check .
+
+      - name: Lint CloudFormation template (cfn-lint)
+        run: cfn-lint template.yaml
+
+      - name: Unit tests (pytest)
+        run: PYTHONPATH=backend pytest tests/unit

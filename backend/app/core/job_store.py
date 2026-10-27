@@ -1,6 +1,5 @@
 import asyncio
 from abc import ABC, abstractmethod
-from app.core.job_models import ItemResult
 from datetime import datetime
 
 import structlog

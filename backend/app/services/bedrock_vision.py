@@ -1,11 +1,13 @@
 import asyncio
 import json
+import time
 import structlog
 import boto3
 from botocore.exceptions import ClientError
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 from app.config import settings
+from app.core.observability import emit_metric
 from app.models.item import ItemMetadata
 from app.services.errors import GUARDRAIL_OTHER, GuardrailBlocked, guardrail_category
 from app.services.retry_utils import _is_transient_bedrock_error
@@ -92,7 +94,9 @@ class BedrockVisionService:
                     "guardrailVersion": settings.bedrock_guardrail_version,
                     "trace": "enabled",
                 }
+            started = time.perf_counter()
             response = self.client.converse(**converse_kwargs)
+            emit_metric("BedrockLatencyMs", (time.perf_counter() - started) * 1000, "Milliseconds", Operation="vision")
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
             error_msg = str(e)

@@ -56,7 +56,7 @@ Client
   |
   `-- GET /jobs/{id} ---------------------> GetJobFunction (poll for status/results)
 
-Failed jobs retry 3x via SQS, then land in AnalysisDLQ instead of looping forever.
+A job that hits an error is caught by the worker, marked `failed` with a readable message, and not retried. A queue message only moves to AnalysisDLQ after 3 delivery attempts, which happens when the worker itself crashes or times out (for example, it cannot write to DynamoDB).
 
 POST /admin/post-to-ebay --------------> PostToEbayFunction
   (API-key gated, idempotent via conditional DynamoDB write, 50/day rate limit,
@@ -78,6 +78,18 @@ A retried `POST /admin/post-to-ebay` call (client timeout, flaky network) could 
 ### Why the demo's posting button is disabled
 
 Live posting needs an authenticated admin API key. Shipping that key in client-side JS would let anyone who opens dev tools post live listings under a real eBay seller account. The demo shows the full review/edit/confirm flow and stops short of the live call, the mechanism is real and tested, just not exposed publicly.
+
+### Observability
+
+- **Structured logs:** every Lambda writes one JSON object per line. Each line carries `request_id` (the Lambda invocation) and, once known, `job_id`, so one job can be followed across `create_job`, `process_job` and `get_job`. In CloudWatch Logs Insights:
+  ```
+  fields @timestamp, event, level, error
+  | filter job_id = "<job id>"
+  | sort @timestamp asc
+  ```
+- **Metrics:** written as CloudWatch Embedded Metric Format lines, so they need no extra permissions. Namespace `Flipr`, dimension `Environment`: `JobsStarted`, `JobsCompleted`, `JobsFailed`, and `BedrockLatencyMs` (also dimensioned by `Operation`, `vision` or `listing`, one data point per Bedrock call).
+- **Alarm:** `flipr-failed-jobs-<env>` goes off when 3 or more jobs fail within 5 minutes and posts to the SNS topic `flipr-alarms-<env>`. Pass `AlarmEmail=you@example.com` at deploy time to get an email; the subscription needs a confirmation click. With no address the alarm still changes state in the CloudWatch console but notifies no one.
+- **Not covered:** there is no dashboard, no alarm on the dead-letter queue (see above for when messages reach it), and no tracing.
 
 ---
 

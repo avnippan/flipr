@@ -1,8 +1,6 @@
 import boto3
 from botocore.exceptions import ClientError
 import structlog
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from app.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -17,8 +15,7 @@ def _get_s3_client():
     """Create S3 client from settings."""
     return boto3.client(
         's3',
-        region_name=settings.aws_region,
-        verify=False
+        region_name=settings.aws_region
     )
 
 async def generate_presigned_upload(

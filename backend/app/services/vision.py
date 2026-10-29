@@ -79,7 +79,7 @@ async def analyze_image(image_bytes: bytes, mime_type: str, measurements: dict =
 
     global client
     if client is None:
-        client = AsyncOpenAI(api_key=settings.openai_api_key, http_client=httpx.AsyncClient(verify=False))
+        client = AsyncOpenAI(api_key=settings.openai_api_key, http_client=httpx.AsyncClient())
 
     try:
         response = await client.beta.chat.completions.parse(

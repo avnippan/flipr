@@ -9,8 +9,6 @@ from botocore.config import Config
 import structlog
 from boto3.dynamodb.conditions import Key
 from decimal import Decimal
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from app.config import settings
 from app.core.job_models import (
@@ -51,7 +49,6 @@ class DynamoDBJobStore(JobStore):
         resource = boto3.resource(
             'dynamodb',
             region_name=settings.aws_region,
-            verify=False,
             config=config
         )
         return resource.Table(settings.dynamodb_table_name)

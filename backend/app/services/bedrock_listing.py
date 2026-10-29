@@ -35,7 +35,6 @@ class BedrockListingService:
             self._client = boto3.client(
                 "bedrock-runtime",
                 region_name=settings.aws_region,
-                verify=False,
             )
         return self._client
 

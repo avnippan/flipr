@@ -1,8 +1,6 @@
 import requests
 import time
 import random
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from pathlib import Path
 
 # Configuration
@@ -57,8 +55,7 @@ def test_batch_processing():
         s3_response = requests.put(
             upload["presigned_url"],
             data=image_bytes,
-            headers={"Content-Type": "image/jpeg"},
-            verify=False
+            headers={"Content-Type": "image/jpeg"}
         )
         if s3_response.status_code != 200:
             print(f"❌ Failed to upload image to S3: {s3_response.status_code}")

@@ -74,7 +74,7 @@ class EbayPoster:
     async def post_listing(self, listing_data: dict) -> EbayListingResult:
         try:
             sku = f"FLIPR-{uuid4().hex[:12].upper()}"
-            async with httpx.AsyncClient(base_url=_BASE_URL, verify=False) as client:
+            async with httpx.AsyncClient(base_url=_BASE_URL) as client:
                 await self._create_inventory_item(client, sku, listing_data)
                 offer_id = await self._create_offer(client, sku, listing_data)
                 listing_id = await self._publish_offer(client, offer_id)

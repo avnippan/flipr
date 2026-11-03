@@ -42,6 +42,7 @@ Photo of a clothing item -> Bedrock Claude vision -> eBay active-listing comps (
 - Backend field is `hashtags` (there is no `style_tags`). `item_specifics` stays separate from the prose `description`.
 - `POST /jobs` needs the `X-Invite-Code` header (SSM `/flipr/invite-code`, type `String`) and is capped per UTC day (`DailyJobLimit`, RateLimitsTable key `JOBS#<date>`). Uploads are presigned POST, not PUT: send `upload_fields` as form fields.
 - The demo is served by CloudFront (stack resource `DemoDistribution`). Its origin is the S3 website endpoint from SSM `/flipr/demo-website-domain` (type `String`); the bucket itself is never managed by the stack. Cache TTL is 60s.
+- Logs are JSON through `app.core.observability` (call `start_request(context, job_id=...)` at the top of a handler). Metrics are CloudWatch EMF lines from `emit_metric`, namespace `Flipr`, so they need no IAM change. `process_job` catches its own errors, so failed jobs never reach the DLQ; the failed-jobs alarm watches the `JobsFailed` metric instead.
 - Poshmark price is a +10% heuristic over the eBay comp. Keep the on-screen disclosure.
 - Frontend: no CSS `aspect-ratio` in grids (iOS Safari bug), use the padding-top trick. Clipboard needs the execCommand fallback on HTTP. Blob URLs die on reload.
 

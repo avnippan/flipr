@@ -9,7 +9,11 @@ from decimal import Decimal
 import boto3
 import structlog
 from botocore.exceptions import ClientError
+from structlog.contextvars import bind_contextvars
 
+from app.core.observability import configure_logging, start_request
+
+configure_logging()
 logger = structlog.get_logger(__name__)
 
 # DynamoDB: JobsTable (DYNAMODB_TABLE_NAME)
@@ -39,6 +43,7 @@ _invite_code = None  # cached for the life of the execution environment
 
 
 def handler(event, context):
+    start_request(context)
     try:
         if not _invite_code_ok(event):
             logger.warning("create_job_bad_invite_code")
@@ -52,6 +57,7 @@ def handler(event, context):
         marketplace = body.get("marketplace", "ebay")
 
         job_id = str(uuid.uuid4())
+        bind_contextvars(job_id=job_id)
         now = int(time.time())
         s3_key = f"uploads/{job_id}/image.jpg"
 

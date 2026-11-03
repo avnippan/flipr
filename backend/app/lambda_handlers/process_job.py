@@ -8,12 +8,14 @@ import structlog
 from botocore.exceptions import ClientError
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
+from app.core.observability import configure_logging, emit_metric, start_request
 from app.services.errors import GUARDRAIL_MODERATION, GUARDRAIL_SENSITIVE_INFO, GuardrailBlocked
 from app.services.retry_utils import _is_missing_object
 from app.services.vision import analyze_image
 from app.services.pricing import fetch_comps
 from app.services.listing import draft_listings
 
+configure_logging()
 logger = structlog.get_logger(__name__)
 
 # DynamoDB: JobsTable (DYNAMODB_TABLE_NAME)
@@ -100,8 +102,10 @@ def handler(event, context):
         job_id = body["job_id"]
         s3_key = body["s3_key"]
 
-        log = logger.bind(job_id=job_id)
+        start_request(context, job_id=job_id)
+        log = logger
         log.info("process_job_start")
+        emit_metric("JobsStarted", 1)
 
         try:
             _update_job(table, job_id, {"status": "processing"})
@@ -129,9 +133,11 @@ def handler(event, context):
             })
 
             log.info("process_job_complete")
+            emit_metric("JobsCompleted", 1)
 
         except Exception as e:
             log.error("job_failed", error=str(e), error_type=type(e).__name__)
+            emit_metric("JobsFailed", 1)
             _update_job(table, job_id, {
                 "status": "failed",
                 "error": _user_message(e),

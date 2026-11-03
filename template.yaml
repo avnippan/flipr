@@ -41,6 +41,10 @@ Parameters:
     Type: Number
     Default: 50
     Description: Max jobs created per UTC day (each costs roughly 2 cents in Bedrock)
+  AlarmEmail:
+    Type: String
+    Default: ""
+    Description: Email address for the failed-jobs alarm. Leave empty to create the alarm without notifications.
   BedrockModelId:
     Type: String
     Default: us.anthropic.claude-sonnet-4-5-20250929-v1:0
@@ -50,6 +54,9 @@ Parameters:
   BedrockGuardrailVersion:
     Type: String
     Default: DRAFT
+
+Conditions:
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, ""]]
 
 Globals:
   Function:
@@ -391,6 +398,40 @@ Resources:
         ViewerCertificate:
           CloudFrontDefaultCertificate: true
 
+  # ── Observability ────────────────────────────────────────────────────────────
+  # The handlers print CloudWatch Embedded Metric Format lines (namespace Flipr), so
+  # the JobsStarted / JobsCompleted / JobsFailed / BedrockLatencyMs metrics need no
+  # extra IAM permissions. This alarm watches JobsFailed.
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub flipr-alarms-${Environment}
+      Subscription: !If
+        - HasAlarmEmail
+        - - Protocol: email
+            Endpoint: !Ref AlarmEmail
+        - !Ref AWS::NoValue
+
+  FailedJobsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub flipr-failed-jobs-${Environment}
+      AlarmDescription: Three or more jobs failed within 5 minutes
+      Namespace: Flipr
+      MetricName: JobsFailed
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
 Outputs:
@@ -430,3 +471,6 @@ Outputs:
   DemoDistributionId:
     Description: Distribution ID for cache invalidations
     Value: !Ref DemoDistribution
+  FailedJobsAlarmName:
+    Description: CloudWatch alarm that fires when jobs fail
+    Value: !Ref FailedJobsAlarm

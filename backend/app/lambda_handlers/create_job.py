@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import time
@@ -21,8 +22,10 @@ logger = structlog.get_logger(__name__)
 #        Fields: job_id, status, marketplace, created_at, updated_at, ttl
 #
 # DynamoDB: RateLimitsTable (RATE_LIMITS_TABLE_NAME) — daily job creation cap
-# Write: date=JOBS#{UTC date, ISO 8601}
-#        Fields: count (atomic ADD, conditional on count < DAILY_JOB_LIMIT)
+# Two counters are bumped together in one transaction (both or neither):
+#   date=JOBS#{UTC date}              global ceiling, count < DAILY_JOB_LIMIT
+#   date=JOBS#{UTC date}#{client_id}  per-client cap, count < PER_CLIENT_DAILY_LIMIT
+#   Fields: count (atomic ADD), ttl (row expires on its own after a few days)
 #
 # Auth: Authorization: Bearer <token> from POST /session (see services/session_token.py).
 # The invite code itself is never sent to this endpoint.
@@ -35,7 +38,8 @@ TABLE_NAME = os.environ["DYNAMODB_TABLE_NAME"]
 S3_BUCKET = os.environ["S3_BUCKET_NAME"]
 ANALYSIS_QUEUE_URL = os.environ["ANALYSIS_QUEUE_URL"]
 RATE_LIMITS_TABLE = os.environ["RATE_LIMITS_TABLE_NAME"]
-DAILY_JOB_LIMIT = int(os.environ.get("DAILY_JOB_LIMIT", "50"))
+DAILY_JOB_LIMIT = int(os.environ.get("DAILY_JOB_LIMIT", "50"))  # global ceiling
+PER_CLIENT_DAILY_LIMIT = int(os.environ.get("PER_CLIENT_DAILY_LIMIT", "10"))
 # Same ceiling as process_job.MAX_IMAGE_BYTES; S3 enforces it at upload time
 MAX_UPLOAD_BYTES = 3_670_016
 
@@ -47,7 +51,12 @@ def handler(event, context):
             logger.warning("create_job_bad_session")
             return _response(401, {"error": "Session missing or expired. Enter your invite code again."})
 
-        if not _check_and_increment_daily_limit():
+        client_id = _client_id(event)
+        limit_hit = _check_and_increment_daily_limit(client_id)
+        if limit_hit == "client":
+            logger.warning("create_job_client_limit_reached", limit=PER_CLIENT_DAILY_LIMIT, client_id=client_id)
+            return _response(429, {"error": "You've reached your daily limit. Try again tomorrow."})
+        if limit_hit == "global":
             logger.warning("create_job_daily_limit_reached", limit=DAILY_JOB_LIMIT)
             return _response(429, {"error": "Daily limit reached. Try again tomorrow."})
 
@@ -110,27 +119,56 @@ def _session_ok(event: dict) -> bool:
     return scheme.lower() == "bearer" and session_token.token_is_valid(token.strip())
 
 
-def _check_and_increment_daily_limit() -> bool:
+def _client_id(event: dict) -> str:
     """
-    Atomically check and increment today's (UTC) job count.
-    Returns True if under the limit (and increments), False if the limit is reached.
-    Uses a conditional write to avoid a read-then-write race condition.
+    Who is making this request? This is the one place to change when real user
+    login arrives: return the user id from the authorizer instead of the IP.
+
+    Today it is the caller's IP address as API Gateway saw it (clients cannot
+    forge it, unlike the X-Forwarded-For header). It is hashed so raw IPs are
+    not stored in DynamoDB or logs. Weakness: people behind one shared network
+    (office, school, phone carrier) share a quota.
     """
-    table = dynamodb.Table(RATE_LIMITS_TABLE)
-    today = datetime.now(timezone.utc).date().isoformat()
+    ctx = event.get("requestContext") or {}
+    ip = (ctx.get("identity") or {}).get("sourceIp") or "unknown"
+    return hashlib.sha256(ip.encode()).hexdigest()[:16]
+
+
+def _check_and_increment_daily_limit(client_id: str):
+    """
+    Count this job against today's (UTC) global ceiling and this client's own cap.
+    Returns None if allowed, or "client" / "global" for whichever limit was hit.
+    Both counters change in one DynamoDB transaction, so a rejected request never
+    uses up a slot on the other counter, and there is no read-then-write race.
+    """
+    now = datetime.now(timezone.utc)
+    today = now.date().isoformat()
+    expires = Decimal(str(int(now.timestamp()) + 3 * 86400))
+
+    def bump(key: str, limit: int) -> dict:
+        return {"Update": {
+            "TableName": RATE_LIMITS_TABLE,
+            "Key": {"date": key},
+            "UpdateExpression": "ADD #count :one SET #ttl = :ttl",
+            "ConditionExpression": "attribute_not_exists(#count) OR #count < :limit",
+            "ExpressionAttributeNames": {"#count": "count", "#ttl": "ttl"},
+            "ExpressionAttributeValues": {":one": Decimal("1"), ":limit": Decimal(str(limit)), ":ttl": expires},
+        }}
 
     try:
-        table.update_item(
-            Key={"date": f"JOBS#{today}"},
-            UpdateExpression="ADD #count :one",
-            ConditionExpression="attribute_not_exists(#count) OR #count < :limit",
-            ExpressionAttributeNames={"#count": "count"},
-            ExpressionAttributeValues={":one": Decimal("1"), ":limit": Decimal(str(DAILY_JOB_LIMIT))},
-        )
-        return True
+        dynamodb.meta.client.transact_write_items(TransactItems=[
+            bump(f"JOBS#{today}", DAILY_JOB_LIMIT),
+            bump(f"JOBS#{today}#{client_id}", PER_CLIENT_DAILY_LIMIT),
+        ])
+        return None
     except ClientError as e:
-        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-            return False
+        if e.response["Error"]["Code"] != "TransactionCanceledException":
+            raise
+        reasons = [r.get("Code") for r in e.response.get("CancellationReasons", [])]
+        if len(reasons) == 2 and reasons[1] == "ConditionalCheckFailed":
+            return "client"  # checked first so a throttled user sees their own limit
+        if len(reasons) == 2 and reasons[0] == "ConditionalCheckFailed":
+            return "global"
         raise
 
 

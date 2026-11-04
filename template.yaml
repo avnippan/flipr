@@ -41,6 +41,10 @@ Parameters:
     Type: Number
     Default: 50
     Description: Max jobs created per UTC day (each costs roughly 2 cents in Bedrock)
+  PerClientDailyLimit:
+    Type: Number
+    Default: 10
+    Description: Max jobs one client (currently one IP address) can create per UTC day. DailyJobLimit stays the global ceiling for everyone combined.
   InviteRotationSchedule:
     Type: String
     Default: rate(7 days)
@@ -156,6 +160,9 @@ Resources:
       KeySchema:
         - AttributeName: date
           KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
 
   # ── SQS ──────────────────────────────────────────────────────────────────────
 
@@ -240,6 +247,7 @@ Resources:
           ANALYSIS_QUEUE_URL: !Ref AnalysisQueue
           INVITE_CODE_PARAM: /flipr/invite-code
           DAILY_JOB_LIMIT: !Ref DailyJobLimit
+          PER_CLIENT_DAILY_LIMIT: !Ref PerClientDailyLimit
 
   RotateInviteCodeFunction:
     Type: AWS::Serverless::Function

@@ -41,6 +41,14 @@ Parameters:
     Type: Number
     Default: 50
     Description: Max jobs created per UTC day (each costs roughly 2 cents in Bedrock)
+  PerClientDailyLimit:
+    Type: Number
+    Default: 10
+    Description: Max jobs one client (currently one IP address) can create per UTC day. DailyJobLimit stays the global ceiling for everyone combined.
+  InviteRotationSchedule:
+    Type: String
+    Default: rate(7 days)
+    Description: How often the invite code is replaced with a new random one (EventBridge schedule expression)
   AlarmEmail:
     Type: String
     Default: ""
@@ -152,6 +160,9 @@ Resources:
       KeySchema:
         - AttributeName: date
           KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
 
   # ── SQS ──────────────────────────────────────────────────────────────────────
 
@@ -189,6 +200,10 @@ Resources:
           HttpMethod: POST
           ThrottlingRateLimit: 2
           ThrottlingBurstLimit: 5
+        - ResourcePath: "/session"
+          HttpMethod: POST
+          ThrottlingRateLimit: 1
+          ThrottlingBurstLimit: 3
       Cors:
         AllowMethods: "'*'"
         AllowHeaders: "'*'"
@@ -207,7 +222,7 @@ Resources:
       FunctionName: !Sub flipr-create-job-${Environment}
       CodeUri: backend/
       Handler: app.lambda_handlers.create_job.handler
-      Description: Create analysis job and return presigned S3 upload URL (invite code and daily cap required)
+      Description: Create analysis job and return presigned S3 upload URL (session token and daily cap required)
       Timeout: 10
       Events:
         CreateJob:
@@ -232,6 +247,51 @@ Resources:
           ANALYSIS_QUEUE_URL: !Ref AnalysisQueue
           INVITE_CODE_PARAM: /flipr/invite-code
           DAILY_JOB_LIMIT: !Ref DailyJobLimit
+          PER_CLIENT_DAILY_LIMIT: !Ref PerClientDailyLimit
+
+  RotateInviteCodeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub flipr-rotate-invite-code-${Environment}
+      CodeUri: backend/
+      Handler: app.lambda_handlers.rotate_invite_code.handler
+      Description: Scheduled job that replaces the invite code in SSM with a new random one
+      Timeout: 10
+      Events:
+        Weekly:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref InviteRotationSchedule
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ssm:PutParameter
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/flipr/invite-code
+      Environment:
+        Variables:
+          INVITE_CODE_PARAM: /flipr/invite-code
+
+  CreateSessionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub flipr-create-session-${Environment}
+      CodeUri: backend/
+      Handler: app.lambda_handlers.create_session.handler
+      Description: Trade the invite code for a short-lived session token
+      Timeout: 10
+      Events:
+        CreateSession:
+          Type: Api
+          Properties:
+            RestApiId: !Ref FlipApiGateway
+            Path: /session
+            Method: POST
+      Policies:
+        - SSMParameterReadPolicy:
+            ParameterName: flipr/invite-code
+      Environment:
+        Variables:
+          INVITE_CODE_PARAM: /flipr/invite-code
 
   ProcessJobFunction:
     Type: AWS::Serverless::Function

@@ -1,4 +1,3 @@
-import hmac
 import json
 import os
 import time
@@ -12,6 +11,7 @@ from botocore.exceptions import ClientError
 from structlog.contextvars import bind_contextvars
 
 from app.core.observability import configure_logging, start_request
+from app.services import session_token
 
 configure_logging()
 logger = structlog.get_logger(__name__)
@@ -24,7 +24,8 @@ logger = structlog.get_logger(__name__)
 # Write: date=JOBS#{UTC date, ISO 8601}
 #        Fields: count (atomic ADD, conditional on count < DAILY_JOB_LIMIT)
 #
-# SSM: /flipr/invite-code (String) — speed bump against casual abuse, not real auth
+# Auth: Authorization: Bearer <token> from POST /session (see services/session_token.py).
+# The invite code itself is never sent to this endpoint.
 
 dynamodb = boto3.resource("dynamodb")
 s3 = boto3.client("s3")
@@ -34,20 +35,17 @@ TABLE_NAME = os.environ["DYNAMODB_TABLE_NAME"]
 S3_BUCKET = os.environ["S3_BUCKET_NAME"]
 ANALYSIS_QUEUE_URL = os.environ["ANALYSIS_QUEUE_URL"]
 RATE_LIMITS_TABLE = os.environ["RATE_LIMITS_TABLE_NAME"]
-INVITE_CODE_PARAM = os.environ.get("INVITE_CODE_PARAM", "/flipr/invite-code")
 DAILY_JOB_LIMIT = int(os.environ.get("DAILY_JOB_LIMIT", "50"))
 # Same ceiling as process_job.MAX_IMAGE_BYTES; S3 enforces it at upload time
 MAX_UPLOAD_BYTES = 3_670_016
-
-_invite_code = None  # cached for the life of the execution environment
 
 
 def handler(event, context):
     start_request(context)
     try:
-        if not _invite_code_ok(event):
-            logger.warning("create_job_bad_invite_code")
-            return _response(401, {"error": "Missing or invalid invite code."})
+        if not _session_ok(event):
+            logger.warning("create_job_bad_session")
+            return _response(401, {"error": "Session missing or expired. Enter your invite code again."})
 
         if not _check_and_increment_daily_limit():
             logger.warning("create_job_daily_limit_reached", limit=DAILY_JOB_LIMIT)
@@ -106,20 +104,10 @@ def handler(event, context):
         return _response(500, {"error": "Internal server error"})
 
 
-def _get_invite_code() -> str:
-    # Lazy client and one read per cold start (SSM client is created only when needed)
-    global _invite_code
-    if _invite_code is None:
-        ssm = boto3.client("ssm")
-        _invite_code = ssm.get_parameter(Name=INVITE_CODE_PARAM)["Parameter"]["Value"]
-    return _invite_code
-
-
-def _invite_code_ok(event: dict) -> bool:
+def _session_ok(event: dict) -> bool:
     headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
-    provided = headers.get("x-invite-code", "")
-    # Encode so compare_digest accepts non-ASCII input instead of raising
-    return hmac.compare_digest(provided.encode(), _get_invite_code().encode())
+    scheme, _, token = headers.get("authorization", "").partition(" ")
+    return scheme.lower() == "bearer" and session_token.token_is_valid(token.strip())
 
 
 def _check_and_increment_daily_limit() -> bool:

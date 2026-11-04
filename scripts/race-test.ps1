@@ -10,7 +10,7 @@ Then check the retries:
 
 Notes:
 - Uploads raw bytes (no browser resize). A file over 3.5 MiB exercises the worker size guard.
-- POST /jobs requires the invite code (SSM /flipr/invite-code). Pass it with -InviteCode, e.g. -InviteCode "your-code".
+- POST /jobs requires a session token. Pass the invite code (SSM /flipr/invite-code) with -InviteCode; the script trades it for a token via POST /session.
   Without it, or with a wrong one, the API returns 401. After DAILY_JOB_LIMIT jobs in a UTC day it returns 429.
 #>
 param(
@@ -25,7 +25,10 @@ if (-not (Test-Path $Image)) { throw "Image not found: $Image" }
 
 $sizeMiB = [math]::Round((Get-Item $Image).Length / 1MB, 2)
 $headers = @{}
-if ($InviteCode) { $headers["X-Invite-Code"] = $InviteCode }
+if ($InviteCode) {
+  $sess = Invoke-RestMethod -Uri "$Api/session" -Method POST -ContentType "application/json" -Body (@{ invite_code = $InviteCode } | ConvertTo-Json)
+  $headers["Authorization"] = "Bearer $($sess.token)"
+}
 
 $r = Invoke-WebRequest -Uri "$Api/jobs" -Method POST -ContentType "application/json" -Body '{"marketplace":"ebay"}' -Headers $headers -UseBasicParsing
 $job = $r.Content | ConvertFrom-Json

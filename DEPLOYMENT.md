@@ -20,7 +20,7 @@ aws ssm put-parameter --name /flipr/invite-code               --value "YOUR_VALU
 aws ssm put-parameter --name /flipr/demo-website-domain       --value "<demo-bucket>.s3-website-us-east-1.amazonaws.com" --type String
 ```
 
-`/flipr/invite-code` gates `POST /jobs` (sent as the `X-Invite-Code` header). It is a speed bump against casual abuse, not real authentication. To rotate it, run `put-parameter` again with `--overwrite`; warm Lambdas pick up the new value after their next cold start. The daily cap on jobs is the `DailyJobLimit` stack parameter (default 50 per UTC day).
+`/flipr/invite-code` is traded once at `POST /session` for a 12-hour token, which `POST /jobs` requires as `Authorization: Bearer <token>`. The browser never stores the code. It is still a speed bump against casual abuse, not real per-user authentication. The `RotateInviteCodeFunction` replaces it with a new random code on a schedule (`InviteRotationSchedule`, default every 7 days), so read the current code with `aws ssm get-parameter --name /flipr/invite-code --query Parameter.Value --output text`. To rotate by hand, run `put-parameter` again with `--overwrite`. Lambdas re-read the value every 5 minutes (`INVITE_CODE_CACHE_SECONDS`), and after that old tokens stop working and users enter the new code. The daily cap on jobs is the `DailyJobLimit` stack parameter (default 50 per UTC day).
 
 `/flipr/demo-website-domain` is the S3 website endpoint (no `http://`) of the demo bucket. The bucket was created outside this stack and the stack never modifies it; CloudFront only reads from it.
 
@@ -74,12 +74,22 @@ Note the API URL from the deploy output — you'll need it below.
 
 ## Testing the async job flow
 
+### Step 0 — Get a session token
+
+```bash
+curl -X POST https://YOUR_API_URL/prod/session \
+  -H "Content-Type: application/json" \
+  -d '{"invite_code": "YOUR_INVITE_CODE"}'
+```
+
+Response: `{"token": "...", "expires_in": 43200}`.
+
 ### Step 1 — Create a job
 
 ```bash
 curl -X POST https://YOUR_API_URL/prod/jobs \
   -H "Content-Type: application/json" \
-  -H "X-Invite-Code: YOUR_INVITE_CODE" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{"marketplace": "ebay"}'
 ```
 
@@ -106,7 +116,7 @@ curl -X POST "<upload_url>" \
   -F "file=@path/to/image.jpg"
 ```
 
-Errors from step 1: `401` for a missing or wrong invite code, `429` once the daily job cap is reached.
+Errors from step 1: `401` for a missing, expired or invalid session token (wrong invite code at step 0), `429` once the daily job cap is reached.
 
 ### Step 3 — Poll job status
 

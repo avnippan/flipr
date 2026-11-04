@@ -16,7 +16,13 @@ def handler(event, context):
     """
     start_request(context)
     try:
-        body = json.loads(event.get("body") or "{}")
+        try:
+            body = json.loads(event.get("body") or "{}")
+        except json.JSONDecodeError:
+            logger.warning("create_session_malformed_json")
+            return _response(400, {"error": "Request body must be valid JSON."})
+        if not isinstance(body, dict):
+            return _response(400, {"error": "Request body must be a JSON object."})
         code = body.get("invite_code")
         if not isinstance(code, str) or not session_token.invite_code_matches(code):
             logger.warning("create_session_bad_invite_code")

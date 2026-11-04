@@ -17,12 +17,12 @@ aws ssm put-parameter --name /flipr/ebay-return-policy-id     --value "YOUR_VALU
 aws ssm put-parameter --name /flipr/ebay-merchant-location-key --value "YOUR_VALUE" --type String
 aws ssm put-parameter --name /flipr/api-key                   --value "YOUR_VALUE" --type String
 aws ssm put-parameter --name /flipr/invite-code               --value "YOUR_VALUE" --type String
-aws ssm put-parameter --name /flipr/demo-website-domain       --value "<demo-bucket>.s3-website-us-east-1.amazonaws.com" --type String
+aws ssm put-parameter --name /flipr/demo-bucket-domain        --value "<demo-bucket>.s3.us-east-1.amazonaws.com" --type String
 ```
 
 `/flipr/invite-code` is traded once at `POST /session` for a 12-hour token, which `POST /jobs` requires as `Authorization: Bearer <token>`. The browser never stores the code. It is still a speed bump against casual abuse, not real per-user authentication. The `RotateInviteCodeFunction` replaces it with a new random code on a schedule (`InviteRotationSchedule`, default every 7 days), so read the current code with `aws ssm get-parameter --name /flipr/invite-code --query Parameter.Value --output text`. To rotate by hand, run `put-parameter` again with `--overwrite`. Lambdas re-read the value every 5 minutes (`INVITE_CODE_CACHE_SECONDS`), and after that old tokens stop working and users enter the new code. The daily cap on jobs has two layers: `PerClientDailyLimit` (default 10 per client per UTC day, where a client is currently one IP address) and `DailyJobLimit` (default 50 per UTC day, a global ceiling for everyone combined).
 
-`/flipr/demo-website-domain` is the S3 website endpoint (no `http://`) of the demo bucket. The bucket was created outside this stack and the stack never modifies it; CloudFront only reads from it.
+`/flipr/demo-bucket-domain` is the regional S3 REST domain (no `https://`, and not the `s3-website` form) of the demo bucket. The bucket was created outside this stack and the stack never modifies it; CloudFront only reads from it.
 
 ## Alarm notifications
 
@@ -36,7 +36,33 @@ AWS then emails a confirmation link, and notifications start only after you clic
 
 ## Serving the demo over HTTPS
 
-The stack creates a CloudFront distribution in front of the demo bucket (S3 website endpoints are HTTP only). After `sam deploy`, the `DemoUrl` and `DemoDistributionId` outputs give the HTTPS URL and the distribution ID. The first deploy takes 5 to 15 minutes while CloudFront provisions.
+The stack creates a CloudFront distribution in front of the demo bucket. CloudFront talks to the bucket over HTTPS through the S3 REST endpoint and signs each request with Origin Access Control (OAC), so the bucket can stay private. After `sam deploy`, the `DemoUrl` and `DemoDistributionId` outputs give the HTTPS URL and the distribution ID. The first deploy takes 5 to 15 minutes while CloudFront provisions.
+
+### Making the demo bucket private (manual, one time)
+
+The stack never modifies the bucket, so do this yourself, in this order, to avoid downtime:
+
+1. Create the SSM parameter `/flipr/demo-bucket-domain` (see above).
+2. Add this statement to the bucket policy, keeping the existing public-read statement for now. Replace the account ID, distribution ID and bucket name:
+
+```json
+{
+  "Sid": "AllowCloudFrontOAC",
+  "Effect": "Allow",
+  "Principal": {"Service": "cloudfront.amazonaws.com"},
+  "Action": "s3:GetObject",
+  "Resource": "arn:aws:s3:::<demo-bucket>/*",
+  "Condition": {"StringEquals": {"AWS:SourceArn": "arn:aws:cloudfront::<account-id>:distribution/<DemoDistributionId>"}}
+}
+```
+
+   Use the current `DemoDistributionId` output. The distribution already exists.
+3. `sam build` then `sam deploy`. This switches the origin in place; the distribution keeps its ID and URL.
+4. Check `curl -I https://<DemoUrl domain>/` returns 200.
+5. Lock the bucket: delete the public-read statement, turn on all four "Block public access" settings, and turn off static website hosting.
+6. Check that `curl -I http://<demo-bucket>.s3-website-us-east-1.amazonaws.com/` no longer returns the page, and the HTTPS URL still returns 200.
+
+Note: with a private bucket, S3 answers 403 (not 404) for a missing file.
 
 The deploy user needs CloudFront permissions for distributions and cache policies (`CreateDistribution`, `UpdateDistribution`, `DeleteDistribution`, `GetDistribution*`, `TagResource`, `CreateInvalidation`, plus `CreateCachePolicy`, `UpdateCachePolicy`, `DeleteCachePolicy`, `GetCachePolicy*`). Add them as an inline or customer-managed policy, since the user is at its managed-policy limit.
 

@@ -33,10 +33,10 @@ Parameters:
   ApiKey:
     Type: AWS::SSM::Parameter::Value<String>
     Default: /flipr/api-key
-  DemoWebsiteDomain:
+  DemoBucketDomain:
     Type: AWS::SSM::Parameter::Value<String>
-    Default: /flipr/demo-website-domain
-    Description: S3 website endpoint (no scheme) of the demo bucket, which lives outside this stack
+    Default: /flipr/demo-bucket-domain
+    Description: Regional S3 REST domain (no scheme), like <bucket>.s3.us-east-1.amazonaws.com, of the demo bucket. The bucket lives outside this stack. Do not use the s3-website- address, which cannot do HTTPS.
   DailyJobLimit:
     Type: Number
     Default: 50
@@ -411,8 +411,20 @@ Resources:
       UsagePlanId: !Ref AdminUsagePlan
 
   # ── Demo frontend over HTTPS ─────────────────────────────────────────────────
-  # The demo bucket is an S3 static website (HTTP only) created outside this stack.
-  # CloudFront fronts it as a custom origin; the bucket itself is not touched.
+  # The demo bucket is created outside this stack and stays private. CloudFront reads
+  # it through the S3 REST endpoint (HTTPS) and signs each request with Origin Access
+  # Control (OAC). The bucket policy that trusts this distribution is a manual step
+  # (see DEPLOYMENT.md) because the stack never modifies the bucket.
+
+  DemoOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-demo-oac"
+        Description: Lets the demo distribution sign requests to the private demo bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
 
   DemoCachePolicy:
     Type: AWS::CloudFront::CachePolicy
@@ -442,14 +454,13 @@ Resources:
         DefaultRootObject: index.html
         HttpVersion: http2
         Origins:
-          - Id: DemoS3Website
-            DomainName: !Ref DemoWebsiteDomain
-            CustomOriginConfig:
-              OriginProtocolPolicy: http-only
-              HTTPPort: 80
-              HTTPSPort: 443
+          - Id: DemoS3Bucket
+            DomainName: !Ref DemoBucketDomain
+            OriginAccessControlId: !GetAtt DemoOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
         DefaultCacheBehavior:
-          TargetOriginId: DemoS3Website
+          TargetOriginId: DemoS3Bucket
           ViewerProtocolPolicy: redirect-to-https
           AllowedMethods: [GET, HEAD]
           CachedMethods: [GET, HEAD]
